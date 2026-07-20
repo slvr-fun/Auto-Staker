@@ -1,0 +1,3057 @@
+<!doctype html>
+<html lang="en" class="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>SLVR Auto-Staker</title>
+<link rel="icon" href="/SLVR_S_19x32.png" type="image/png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Geist:wght@300;400;600;700;900&family=Geist+Mono:wght@400&family=Space+Grotesk:wght@500;600;700&display=swap" rel="stylesheet">
+<style>
+  /* ── SLVR design system (mirrors interface ui-upgrade), compact scale ────
+     Elevation ladder:  bg #0d0d0d · surface #111112 · raised #1a1a1b · panel #202022
+     House rule: every ring is an inset box-shadow, never a CSS border. */
+  :root {
+    --bg: #0d0d0d;
+    --surface: #111112;
+    --raised: #1a1a1b;
+    --panel: #202022;
+    --surface-hover: #26262b;
+    --raised-hover: #242426;
+    --panel-hover: #2a2a2d;
+    --metal: #b2b9bc;
+    --chrome: #c1c7c9;
+    --danger: #fd3748;
+    --w64: rgba(255,255,255,.82);
+    --w32: rgba(255,255,255,.60);
+    --w16: rgba(255,255,255,.16);
+    --fg: #ffffff;
+    --log-bg: #0a0a0b;
+    --s2: rgba(255,255,255,.62);
+    --s3: rgba(255,255,255,.22);
+  }
+  html.hicontrast {
+    --w64: rgba(255,255,255,.95);
+    --w32: rgba(255,255,255,.74);
+    --s2: rgba(255,255,255,.8);
+  }
+  html.light.hicontrast {
+    --w64: rgba(22,26,30,.95);
+    --w32: rgba(22,26,30,.74);
+    --s2: rgba(22,26,30,.74);
+  }
+  html.light {
+    --bg: #e9ebee;
+    --surface: #f8f9fa;
+    --raised: #e8eaee;
+    --panel: #d7dade;
+    --surface-hover: #eff1f3;
+    --raised-hover: #dfe2e7;
+    --panel-hover: #cbd0d6;
+    --metal: #8f979e;
+    --chrome: #4c5760;
+    --danger: #d92132;
+    --w64: rgba(22,26,30,.74);
+    --w32: rgba(22,26,30,.56);
+    --w16: rgba(22,26,30,.16);
+    --fg: #16181b;
+    --log-bg: #eef0f3;
+    --s2: rgba(22,26,30,.54);
+    --s3: rgba(22,26,30,.16);
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; }
+  body {
+    background: var(--bg); color: var(--fg);
+    zoom: var(--ui-scale, 1); /* text-size control (Settings → Display) */
+    font-family: 'Geist', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+    font-size: 13px; line-height: 1.5;
+    font-feature-settings: 'lnum' 1, 'tnum' 1;
+    -webkit-font-smoothing: antialiased;
+  }
+  .display { font-family: 'Space Grotesk', 'Geist', ui-sans-serif, system-ui, sans-serif; letter-spacing: -0.01em; }
+  .mono { font-family: 'Geist Mono', ui-monospace, SFMono-Regular, Menlo, monospace; }
+
+  .wrap {
+    max-width: 1160px; margin: 0 auto; padding: 14px clamp(16px, 2vw, 32px) 16px;
+    min-height: 100dvh; display: flex; flex-direction: column;
+  }
+  /* The chart fills the leftover viewport height (so the page fits with no
+     scroll), and stays stable because the two sections that used to grow
+     after data loaded — the activity log and the wallet plan line — now
+     reserve their height (see .log height + #ethPlan min-height). Without
+     those reservations, flex-fill made the chart "stretch then shrink". */
+  #stationCard { flex: 1; display: flex; min-height: 0; }
+  #stationCard > .face { display: flex; flex-direction: column; width: 100%; height: auto; flex: 1; }
+  #stationCard .bigrid { flex: 1; min-height: 0; }
+
+  header { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-bottom: 10px; }
+  .brand { display: flex; align-items: center; gap: 9px; }
+  .brand img { height: 19px; width: auto; }
+  .brand h1 { font-size: 16px; font-weight: 700; margin: 0; letter-spacing: .02em; white-space: nowrap; }
+  .brand h1 span { color: var(--w64); font-weight: 500; }
+  .spacer { flex: 1; }
+
+  .modeswitch {
+    display: flex; gap: 3px; height: 34px; padding: 3px; border-radius: 9px;
+    background: var(--surface); box-shadow: inset 0 0 0 1px var(--panel);
+  }
+  .modeswitch button {
+    display: flex; align-items: center; gap: 6px; padding: 0 12px; border-radius: 6px;
+    font-size: 11px; font-weight: 800; letter-spacing: .08em; color: var(--w32);
+    transition: background 200ms, color 200ms, box-shadow 200ms;
+  }
+  .modeswitch button:hover { color: var(--w64); }
+  .modeswitch .dot { width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
+  .modeswitch .dry.active { background: var(--raised); color: var(--fg); box-shadow: inset 0 0 0 1px var(--w16); }
+  .modeswitch .live.active { background: rgba(253,55,72,.14); color: var(--danger); box-shadow: inset 0 0 0 1px rgba(253,55,72,.55); }
+  .modeswitch .live.active .dot { animation: blink 1.6s ease-in-out infinite; }
+  @keyframes blink { 0%,100% { opacity: 1 } 50% { opacity: .35 } }
+  @keyframes pulse { 0%,100% { opacity: 1 } 50% { opacity: .3 } }
+
+  .pill {
+    display: inline-flex; align-items: center; height: 16px; padding: 0 7px;
+    border-radius: 200px; font-size: 9px; font-weight: 600; letter-spacing: .04px;
+    color: var(--w64); box-shadow: inset 0 0 0 1px var(--w16); vertical-align: middle;
+  }
+  h2 .pill { margin-top: -1px; }
+  .pill.on { color: var(--fg); box-shadow: inset 0 0 0 1px var(--w32); }
+  .pill.bad { color: var(--danger); box-shadow: inset 0 0 0 1px rgba(253,55,72,.4); }
+  .statuspill { height: 22px; padding: 0 10px; font-size: 10px; cursor: pointer; transition: background 150ms; }
+  .statuspill:hover { background: rgba(253,55,72,.1); }
+
+  .banner {
+    display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+    border-radius: 10px; padding: 8px 14px; margin-bottom: 10px;
+    background: rgba(253,55,72,.08); box-shadow: inset 0 0 0 1px rgba(253,55,72,.35);
+    font-size: 12.5px;
+  }
+  .banner b { color: var(--danger); }
+
+  .card { background: var(--panel); border-radius: 12px; padding: 4px; }
+  .face { background: var(--surface); border-radius: 8px; padding: 11px 14px; height: 100%; }
+  .grid { display: grid; gap: 9px; grid-template-columns: repeat(auto-fit, minmax(290px, 1fr)); margin-bottom: 10px; }
+  .grid > .card { display: flex; flex-direction: column; }
+  .grid > .card > .face { flex: 1; }
+  .full { grid-column: 1 / -1; }
+
+  h2 {
+    margin: 0 0 9px; font-size: 10.5px; font-weight: 700;
+    text-transform: uppercase; letter-spacing: .22em; color: var(--w32);
+  }
+  .row { display: flex; justify-content: space-between; align-items: center; gap: 10px; padding: 3px 0; }
+  .row .k { font-size: 12px; font-weight: 300; color: var(--w64); white-space: nowrap; }
+  .row .v { font-size: 13px; font-weight: 600; color: var(--fg); }
+  .hero { font-size: 17px; font-weight: 600; letter-spacing: .08px; }
+  .muted { color: var(--w64); }
+  .dim { color: var(--w32); }
+  .danger-text { color: var(--danger); }
+  .help { font-size: 12px; font-weight: 300; line-height: 17px; color: var(--w64); margin: 0 0 10px; }
+
+  button { font: inherit; cursor: pointer; border: none; background: none; color: var(--fg); padding: 0; }
+  button:disabled { cursor: not-allowed; opacity: .45; }
+
+  .metal {
+    position: relative; height: 36px; border-radius: 10px; padding: 3px;
+    background-image: url('/figma/metal-liquid.webp');
+    background-repeat: no-repeat; background-size: 210% 210%;
+    background-position: var(--lm-x, 28%) var(--lm-y, 22%);
+    box-shadow:
+      inset 0 0 0 1px #ffffff,
+      0 3px 0 rgba(0,0,0,.15),
+      0 2px 2px rgba(0,0,0,.05),
+      0 2px 4px rgba(0,0,0,.15),
+      0 4px 6px rgba(0,0,0,.3),
+      0 4px 4px rgba(0,0,0,.25);
+    transition: transform 240ms cubic-bezier(.22,1,.36,1), background-position 520ms cubic-bezier(.22,1,.36,1);
+  }
+  .metal:hover { transform: translateY(-2px); background-position: calc(var(--lm-x, 28%) + 34%) calc(var(--lm-y, 22%) + 30%); }
+  .metal:active { transform: translateY(0); transition-duration: 110ms; }
+  .metal > span {
+    display: flex; align-items: center; justify-content: center; height: 100%;
+    border-radius: 7px; background: var(--surface); padding: 0 16px;
+    font-size: 13.5px; font-weight: 700; letter-spacing: .05px; white-space: nowrap;
+  }
+  .metal:disabled { background-image: none; background-color: var(--raised); box-shadow: none; transform: none; }
+  .metal:disabled > span { background: transparent; color: var(--w32); }
+
+  .solid {
+    height: 36px; border-radius: 10px; background: var(--raised); padding: 0 16px;
+    font-size: 13px; font-weight: 700;
+    transition: background 150ms, transform 150ms;
+  }
+  .solid:hover { background: var(--raised-hover); }
+  .solid:active { transform: scale(.99); }
+
+  .dangerbtn {
+    height: 36px; border-radius: 10px; background: var(--danger); padding: 0 16px;
+    color: #000; font-size: 13px; font-weight: 800;
+    transition: filter 150ms, transform 150ms;
+  }
+  .dangerbtn:hover { filter: brightness(1.08); }
+  .dangerbtn:active { transform: scale(.99); }
+
+  .chip {
+    height: 26px; border-radius: 8px; background: var(--panel); padding: 0 9px;
+    font-size: 11px; font-weight: 600; color: var(--w64);
+    transition: background 150ms, color 150ms, transform 150ms;
+  }
+  .chip:hover { background: var(--panel-hover); color: var(--fg); }
+  .chip:active { transform: scale(.95); }
+
+  label { display: block; margin: 10px 0 5px; font-size: 11.5px; font-weight: 300; color: var(--w64); }
+  input[type=text], input[type=password], input[type=number], select {
+    width: 100%; height: 38px; padding: 0 12px; border: none; border-radius: 8px;
+    background: var(--raised); color: var(--fg); font: inherit; font-size: 13px; font-weight: 600;
+    box-shadow: inset 0 0 0 1px var(--panel);
+    font-feature-settings: 'lnum' 1, 'tnum' 1;
+    appearance: none; -webkit-appearance: none;
+    transition: box-shadow 150ms, background 150ms;
+  }
+  input::placeholder { color: var(--w32); font-weight: 400; }
+  input:hover, select:hover { background: var(--raised-hover); }
+  input:focus, select:focus { outline: none; box-shadow: inset 0 0 0 1px rgba(148,163,184,.6); }
+  select {
+    cursor: pointer;
+    background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='11' height='7' viewBox='0 0 11 7'><path d='M1 1l4.5 4.5L10 1' stroke='rgba(255,255,255,.64)' fill='none' stroke-width='1.6' stroke-linecap='round' stroke-linejoin='round'/></svg>");
+    background-repeat: no-repeat; background-position: right 12px center; padding-right: 32px;
+    text-overflow: ellipsis;
+  }
+  select option { background: var(--raised); color: var(--fg); font-weight: 500; }
+  input[type=number]::-webkit-outer-spin-button, input[type=number]::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
+  input[type=number] { -moz-appearance: textfield; appearance: textfield; }
+
+  .amount {
+    display: flex; align-items: center; gap: 10px; height: 52px; padding: 0 14px;
+    border-radius: 8px; background: var(--raised); box-shadow: inset 0 0 0 1px var(--panel);
+  }
+  .amount .unit { display: flex; align-items: center; gap: 7px; font-size: 11.5px; font-weight: 600; color: var(--w64); white-space: nowrap; }
+  .amount .unit img { height: 14px; width: auto; }
+  .amount input {
+    flex: 1; min-width: 0; height: 100%; background: transparent; box-shadow: none; padding: 0;
+    text-align: right; font-size: 20px; font-weight: 600;
+  }
+  .amount input:hover { background: transparent; }
+  .amount input:focus { box-shadow: none; }
+
+  /* custom switch */
+  .checkline { display: flex; gap: 9px; align-items: center; margin: 9px 0; font-size: 12.5px; color: var(--w64); cursor: pointer; user-select: none; }
+  .checkline b { color: var(--fg); }
+  .switch { position: relative; display: inline-block; width: 34px; height: 20px; flex-shrink: 0; }
+  .switch input { position: absolute; inset: 0; opacity: 0; margin: 0; cursor: pointer; }
+  .switch .track {
+    position: absolute; inset: 0; border-radius: 200px; background: var(--raised);
+    box-shadow: inset 0 0 0 1px var(--panel); transition: background 200ms, box-shadow 200ms;
+    pointer-events: none;
+  }
+  .switch .knob {
+    position: absolute; top: 3px; left: 3px; width: 14px; height: 14px; border-radius: 50%;
+    background: #5b6165; box-shadow: 0 1px 3px rgba(0,0,0,.5);
+    transition: transform 200ms cubic-bezier(.22,1,.36,1), background 200ms;
+    pointer-events: none;
+  }
+  .switch input:checked ~ .track { background: rgba(178,185,188,.22); box-shadow: inset 0 0 0 1px rgba(178,185,188,.55); }
+  .switch input:checked ~ .knob { transform: translateX(14px); background: linear-gradient(145deg, #eef1f3 0%, var(--metal) 55%, #848c91 100%); box-shadow: inset 0 0 0 1px rgba(255,255,255,.7), 0 1px 3px rgba(0,0,0,.5); }
+  .switch input:focus-visible ~ .track { box-shadow: inset 0 0 0 1px rgba(148,163,184,.7); }
+
+  /* sliders */
+  .sliderrow { margin: 8px 0 0; }
+  .sliderrow .top { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 4px; }
+  .sliderrow .name { font-size: 12px; font-weight: 600; color: var(--fg); }
+  .sliderrow .name small { font-weight: 300; color: var(--w64); margin-left: 6px; font-size: 11px; }
+  .sliderrow .pct { font-size: 15px; font-weight: 600; min-width: 44px; text-align: right; }
+  input[type=range] {
+    -webkit-appearance: none; appearance: none; width: 100%; height: 22px;
+    background: transparent; cursor: pointer; margin: 0; padding: 0; box-shadow: none;
+  }
+  input[type=range]:hover { background: transparent; }
+  input[type=range]::-webkit-slider-runnable-track {
+    height: 6px; border-radius: 3px; background: var(--raised); box-shadow: inset 0 0 0 1px var(--panel);
+  }
+  input[type=range]::-webkit-slider-thumb {
+    -webkit-appearance: none; width: 16px; height: 16px; border-radius: 50%;
+    margin-top: -5px;
+    background: linear-gradient(145deg, #eef1f3 0%, var(--metal) 55%, #848c91 100%);
+    box-shadow: inset 0 0 0 1px rgba(255,255,255,.8), 0 2px 5px rgba(0,0,0,.5);
+  }
+  input[type=range]::-moz-range-track {
+    height: 6px; border-radius: 3px; background: var(--raised); box-shadow: inset 0 0 0 1px var(--panel);
+  }
+  input[type=range]::-moz-range-thumb {
+    width: 16px; height: 16px; border: none; border-radius: 50%;
+    background: linear-gradient(145deg, #eef1f3 0%, var(--metal) 55%, #848c91 100%);
+    box-shadow: inset 0 0 0 1px rgba(255,255,255,.8), 0 2px 5px rgba(0,0,0,.5);
+  }
+  .sumbar { height: 5px; border-radius: 3px; overflow: hidden; display: flex; margin: 12px 0 5px; background: var(--raised); box-shadow: inset 0 0 0 1px var(--panel); }
+  .sumbar div { height: 100%; transition: width 300ms cubic-bezier(.22,1,.36,1); }
+  .sumbar .s1 { background: var(--metal); }
+  .sumbar .s2 { background: var(--s2); }
+  .sumbar .s3 { background: var(--s3); }
+  .sumcaption { display: flex; gap: 14px; font-size: 10.5px; font-weight: 300; color: var(--w64); }
+  .sumcaption i { display: inline-block; width: 7px; height: 7px; border-radius: 2px; margin-right: 5px; font-style: normal; }
+
+  /* SegTabs (used inside the settings modal) */
+  .tabtrack {
+    position: relative; display: flex; gap: 4px; height: 40px; padding: 4px;
+    border-radius: 8px; background: var(--surface); overflow: hidden;
+  }
+  .tabslider {
+    position: absolute; top: 4px; bottom: 4px; left: 4px;
+    border-radius: 6px; padding: 3px;
+    background-image: url('/figma/metal-liquid.webp');
+    background-repeat: no-repeat; background-size: 210% 210%;
+    background-position: 28% 22%;
+    box-shadow: inset 0 0 0 1px rgba(255,255,255,.85);
+    transition: transform 420ms cubic-bezier(.22,1,.36,1), background-position 420ms cubic-bezier(.22,1,.36,1);
+  }
+  .tabslider i { display: block; width: 100%; height: 100%; border-radius: 3px; background: var(--surface); }
+  .tabbtn {
+    position: relative; z-index: 1; flex: 1; height: 100%;
+    font-size: 13px; font-weight: 700; color: var(--w64);
+    transition: color 300ms;
+  }
+  .tabbtn:hover, .tabbtn.active { color: var(--fg); }
+
+  .note {
+    border-radius: 8px; padding: 10px 14px; margin: 10px 0 0;
+    box-shadow: inset 0 0 0 1px var(--panel);
+    font-size: 11.5px; font-weight: 300; line-height: 17px; color: var(--w64);
+  }
+  .note.warn { box-shadow: inset 0 0 0 1px rgba(253,55,72,.35); }
+
+  table { width: 100%; border-collapse: collapse; font-size: 12px; }
+  th {
+    text-align: left; padding: 5px 8px; font-size: 9.5px; font-weight: 700;
+    text-transform: uppercase; letter-spacing: .16em; color: var(--w32);
+  }
+  td { padding: 6px 8px; color: var(--w64); font-weight: 300; box-shadow: inset 0 1px 0 var(--raised); }
+  td.v { color: #fff; font-weight: 600; }
+
+  .log {
+    background: var(--log-bg); border-radius: 8px; box-shadow: inset 0 0 0 1px var(--panel);
+    padding: 10px 12px; font-family: 'Geist Mono', ui-monospace, Menlo, monospace;
+    font-size: 11px; line-height: 1.6; height: 108px; overflow-y: auto;
+    white-space: pre-wrap; color: var(--w64);
+  }
+
+  .strip-label {
+    display: flex; align-items: center; gap: 7px; margin: 0 0 7px;
+    font-size: 9.5px; font-weight: 700; text-transform: uppercase; letter-spacing: .22em; color: var(--w32);
+  }
+  .hairline { height: 1px; background: var(--raised); margin: 11px 0 9px; }
+
+  /* hero earnings strip + live round panel */
+  .herostrip { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 14px; }
+  .hstat h2 { margin-bottom: 4px; display: flex; align-items: center; gap: 7px; letter-spacing: .14em; font-size: 10px; }
+  .bignum { font-size: 19px; font-weight: 600; letter-spacing: .08px; line-height: 1.15; white-space: nowrap; font-variant-numeric: tabular-nums; }
+  .sub { font-size: 11px; font-weight: 300; color: var(--w32); margin-top: 3px; }
+  .sub b { color: var(--w64); font-weight: 600; }
+  .live-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--metal); animation: pulse 2s ease-in-out infinite; display: inline-block; }
+  .countbar { height: 5px; border-radius: 3px; margin: 8px 0 5px; background: var(--raised); box-shadow: inset 0 0 0 1px var(--panel); overflow: hidden; }
+  .countbar div { height: 100%; background: linear-gradient(90deg, #848c91, var(--chrome)); border-radius: 3px; transition: width 900ms linear; }
+  .netrow {
+    display: flex; gap: 6px 20px; flex-wrap: nowrap; overflow-x: auto; white-space: nowrap;
+    margin-top: 11px; padding-top: 10px;
+    box-shadow: inset 0 1px 0 var(--raised);
+    font-size: 11px; font-weight: 300; color: var(--w32);
+    /* Fixed one-line height (matches the populated row) so the metrics filling
+       in after load can't grow the row and shift the flex-filled chart. Stays
+       one line at any width — overflows horizontally instead of wrapping. */
+    height: 27px; box-sizing: border-box;
+  }
+  .netrow::-webkit-scrollbar { height: 0; }
+  .netrow b { color: var(--w64); font-weight: 600; }
+  .signal-good { color: var(--chrome); }
+  .signal-bad { color: var(--w32); }
+
+  /* chart */
+  .chartHead { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin-bottom: 6px; }
+  .chartHead h2 { margin: 0; }
+  .chip.active { background: var(--panel-hover); color: var(--fg); box-shadow: inset 0 0 0 1px var(--w16); }
+  .rangechips { display: inline-flex; gap: 3px; margin-left: 6px; }
+  .rchip { height: 22px; padding: 0 8px; font-size: 10px; letter-spacing: .06em; }
+  .schip { height: 22px; padding: 0 9px; font-size: 10.5px; }
+  /* flex-basis 0 (not auto) so the height is purely flex-driven from the first
+     layout — avoids the SVG briefly rendering at its intrinsic viewBox ratio
+     (a taller flash) before the flex row settles. */
+  svg.chart { width: 100%; height: auto; min-height: 180px; max-height: 560px; display: block; flex: 1 1 0; }
+  /* Pin the single grid row to fill the (flex-driven, definite) height of
+     .bigrid from the first layout pass. Without this the row is content-sized
+     to the taller stat column on first paint, then stretches once the flex
+     chain resolves the full height — the visible "chart grows then settles"
+     jump. min-height:0 on the cells lets them shrink so their content can
+     never push the row taller than the container. */
+  .bigrid { display: grid; grid-template-columns: 1.55fr 1fr; grid-template-rows: minmax(0, 1fr); gap: 2px 22px; align-items: stretch; }
+  .chartcol { display: flex; flex-direction: column; min-width: 0; min-height: 0; }
+  .statcol { min-height: 0; }
+  .statcol { min-width: 0; }
+  .statcol .herostrip { grid-template-columns: 1fr 1fr; gap: 10px 14px; }
+  .statcol .bignum { font-size: 16.5px; }
+  .statcol .sub { font-size: 10px; margin-top: 2px; }
+  .statcol .hstat h2 { font-size: 9px; margin-bottom: 3px; }
+  .statcol .hairline { margin: 9px 0 8px; }
+  @media (max-width: 860px) { .bigrid { grid-template-columns: 1fr; } svg.chart { min-height: 150px; max-height: 220px; } }
+  @media (min-width: 1250px) { .bigrid { grid-template-columns: 1.9fr 1fr; } }
+  @media (min-height: 1020px) { .log { height: clamp(140px, 20vh, 320px); } }
+
+  /* custom dropdown (no native selects) */
+  .dd { position: relative; }
+  .ddbtn {
+    display: flex; align-items: center; gap: 8px; width: 100%; height: 36px; padding: 0 12px;
+    border-radius: 8px; background: var(--raised); box-shadow: inset 0 0 0 1px var(--panel);
+    font-size: 12.5px; font-weight: 600; color: var(--fg); text-align: left;
+    transition: background 150ms, box-shadow 150ms;
+  }
+  .ddbtn:hover { background: var(--raised-hover); }
+  .ddbtn.open { box-shadow: inset 0 0 0 1px rgba(148,163,184,.6); }
+  .ddbtn .lbl { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .ddbtn svg { flex-shrink: 0; transition: transform 200ms; }
+  .ddbtn.open svg { transform: rotate(180deg); }
+  .ddlist {
+    position: absolute; z-index: 20; left: 0; right: 0; top: calc(100% + 6px);
+    background: var(--panel); border-radius: 10px; padding: 4px;
+    box-shadow: 0 18px 60px rgba(0,0,0,.55);
+  }
+  .ddlist .inner2 { background: var(--raised); border-radius: 7px; padding: 4px; max-height: 220px; overflow-y: auto; }
+  .ddopt {
+    display: flex; align-items: center; gap: 8px; width: 100%; padding: 8px 10px;
+    border-radius: 6px; font-size: 12.5px; font-weight: 600; color: var(--w64); text-align: left;
+    transition: background 120ms, color 120ms;
+  }
+  .ddopt:hover { background: var(--surface-hover); color: var(--fg); }
+  .ddopt.sel { color: var(--fg); }
+  .ddopt .tick { width: 14px; flex-shrink: 0; color: var(--metal); }
+
+  .groupbox { border-radius: 8px; padding: 12px 14px 10px; box-shadow: inset 0 0 0 1px var(--panel); margin-bottom: 4px; }
+
+  /* settings fields */
+  .field .hint { font-size: 10.5px; font-weight: 300; color: var(--w32); margin-top: 4px; }
+  .fgrid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+  @media (max-width: 560px) { .fgrid { grid-template-columns: 1fr; } }
+
+  /* slim locked bar */
+  .lockbar {
+    display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+    border-radius: 10px; padding: 8px 14px; margin-bottom: 10px;
+    background: var(--surface); box-shadow: inset 0 0 0 1px rgba(148,163,184,.35);
+    font-size: 12.5px;
+  }
+  .lockbar input { width: 200px; height: 30px; }
+  .lockbar .metal { height: 30px; }
+  .lockbar .metal > span { padding: 0 12px; font-size: 12px; }
+
+  /* activity/history mini-tabs */
+  .minitabs { display: flex; gap: 6px; }
+
+  /* modals + onboarding */
+  .overlay {
+    position: fixed; inset: 0; z-index: 50; display: none;
+    align-items: center; justify-content: center; padding: 16px;
+    background: rgba(0,0,0,.6);
+  }
+  .overlay.open { display: flex; }
+  /* The confirm dialog is a continuation of whatever modal opened it, so it
+     must always sit ON TOP of every other overlay (z-index 50) and the
+     onboarding layer (40) — never behind them. */
+  #confirmModal { z-index: 70; }
+  .modal { width: 100%; max-width: 440px; border-radius: 12px; background: var(--panel); padding: 4px; box-shadow: 0 25px 120px rgba(0,0,0,.6); }
+  .modal.wide { max-width: 620px; }
+  .modal > div { background: var(--surface); border-radius: 8px; padding: 20px; }
+  .modal h3 { margin: 0 0 6px; font-size: 15px; font-weight: 700; }
+  .modal .tabwrap { background: transparent; padding: 0; }
+  .keybox {
+    border-radius: 8px; background: var(--raised); box-shadow: inset 0 0 0 1px var(--panel);
+    padding: 10px 12px; font-family: 'Geist Mono', ui-monospace, Menlo, monospace;
+    font-size: 11.5px; word-break: break-all; color: var(--fg); user-select: all;
+  }
+  .addrline {
+    display: flex; align-items: center; gap: 8px;
+    border-radius: 8px; background: var(--raised); box-shadow: inset 0 0 0 1px var(--panel);
+    padding: 9px 11px; font-family: 'Geist Mono', ui-monospace, Menlo, monospace; font-size: 11.5px;
+  }
+  .addrline span { flex: 1; word-break: break-all; }
+
+  .ob { position: fixed; inset: 0; z-index: 40; background: var(--bg); display: none; overflow-y: auto; }
+  .ob.open { display: block; }
+  .ob .inner { max-width: 500px; margin: 0 auto; padding: 44px 16px 60px; }
+  .ob .brand { justify-content: center; margin-bottom: 22px; }
+  .ob .steps { display: flex; justify-content: center; gap: 6px; margin-bottom: 18px; }
+  .ob .steps i { width: 22px; height: 3px; border-radius: 2px; background: var(--raised); transition: background 300ms; }
+  .ob .steps i.done { background: var(--metal); }
+  .ob h3 { margin: 0 0 6px; font-size: 17px; font-weight: 700; text-align: center; }
+  .ob .sub { text-align: center; margin-bottom: 16px; }
+  .ob .choice {
+    display: flex; align-items: center; gap: 12px; width: 100%; text-align: left;
+    border-radius: 10px; background: var(--raised); padding: 13px 15px; margin-bottom: 8px;
+    box-shadow: inset 0 0 0 1px var(--panel);
+    transition: background 150ms, box-shadow 150ms;
+  }
+  .ob .choice:hover { background: var(--raised-hover); box-shadow: inset 0 0 0 1px rgba(148,163,184,.45); }
+  .ob .choice.obsel { box-shadow: inset 0 0 0 1.5px var(--metal); background: var(--raised-hover); }
+  .ob .choice .t { font-size: 13.5px; font-weight: 700; }
+  .ob .choice .d { font-size: 11.5px; font-weight: 300; color: var(--w64); }
+  .ob .choice .ico { font-size: 17px; width: 26px; text-align: center; flex-shrink: 0; }
+  .obnav { display: flex; gap: 10px; margin-top: 16px; align-items: center; }
+
+  .toast {
+    position: fixed; bottom: 18px; right: 18px; display: none; z-index: 60;
+    background: var(--panel); border-radius: 12px; padding: 4px; max-width: 360px;
+    box-shadow: 0 25px 120px rgba(0,0,0,.6);
+  }
+  .toast > div {
+    background: var(--surface); border-radius: 8px; padding: 11px 14px;
+    font-size: 12.5px; box-shadow: inset 0 0 0 1px var(--ring, var(--panel));
+  }
+
+  .hidden { display: none !important; }
+  .inline { display: flex; gap: 9px; align-items: center; flex-wrap: wrap; }
+  footer { margin-top: 12px; font-size: 10px; font-weight: 300; color: var(--w32); letter-spacing: .04em; }
+  ::selection { background: rgba(178,185,188,.35); }
+  ::-webkit-scrollbar { width: 9px; height: 9px; }
+  ::-webkit-scrollbar-thumb { background: var(--panel); border-radius: 5px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  .split3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 10px; }
+  @media (max-width: 700px) { .split3 { grid-template-columns: 1fr; } }
+  .actgrid { display: grid; gap: 12px; grid-template-columns: 1fr 1.6fr; margin-bottom: 12px; }
+  @media (max-width: 820px) { .actgrid { grid-template-columns: 1fr; } }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <div class="brand">
+      <img src="/SLVR_S_19x32.png" alt="SLVR">
+      <h1 class="display">SLVR <span>Auto-Staker</span></h1>
+    </div>
+    <span id="runBadge" class="pill">stopped</span>
+    <button id="gasPill" class="pill bad statuspill hidden">⚠ low gas · fund</button>
+    <button id="lockStatePill" class="pill bad statuspill hidden">🔒 locked · unlock</button>
+    <span class="spacer"></span>
+    <div class="modeswitch" title="Dry-run prints what it would do; LIVE sends real transactions">
+      <button id="modeDry" class="dry active"><span class="dot"></span>DRY RUN</button>
+      <button id="modeLive" class="live"><span class="dot"></span>LIVE</button>
+    </div>
+    <button id="btnTheme" class="chip" style="height:34px; padding:0 11px; font-size:14px" title="Light / dark mode">☀</button>
+    <button id="btnSettings" class="solid" title="Split, mining strategy, RPC…">⚙ Settings</button>
+    <button id="btnOnce" class="solid">Run once</button>
+    <button id="btnStart" class="metal"><span>Start</span></button>
+    <button id="btnStop" class="dangerbtn hidden">Stop</button>
+  </header>
+
+  <!-- the live station: big chart + earnings + round, one panel -->
+  <div class="card" id="stationCard" style="margin-bottom:10px"><div class="face">
+    <div class="bigrid">
+    <div class="chartcol">
+    <div class="chartHead" style="flex-wrap:nowrap; overflow:hidden">
+      <span class="live-dot"></span>
+      <button class="chip schip active" data-series="pending" data-group="rewards">Rewards</button>
+      <button class="chip schip" data-series="price">Price</button>
+      <button class="chip schip" data-series="balance">ETH</button>
+      <button class="chip schip" data-series="locked">Locked</button>
+      <span class="spacer"></span>
+      <span class="rangechips">
+        <button class="chip rchip active" data-range="live">LIVE</button>
+        <button class="chip rchip" data-range="1d">1D</button>
+      </span>
+    </div>
+    <!-- Rewards sub-options on their own row under the range chips. The row
+         always occupies its height (visibility, not display) so toggling it
+         can't resize the flex-filled chart. -->
+    <div id="rewardSubRow" style="display:flex; justify-content:flex-end; height:22px; margin-top:5px">
+      <span class="rangechips" id="rewardSub" style="visibility:hidden">
+        <button class="chip rchip active" data-rewardmode="current">current</button>
+        <button class="chip rchip" data-rewardmode="cumulative">cumulative</button>
+      </span>
+    </div>
+    <svg id="chart" class="chart" viewBox="0 0 800 250" preserveAspectRatio="none"></svg>
+    </div>
+    <div class="statcol">
+    <div class="strip-label"><span class="live-dot"></span>Your earnings</div>
+    <div class="herostrip">
+      <div class="hstat">
+        <h2>Unclaimed rewards</h2>
+        <div class="bignum display" id="hPending">—</div>
+        <div class="sub" id="hPendingSub">accruing every round</div>
+      </div>
+      <div class="hstat">
+        <h2>Earning rate</h2>
+        <div class="bignum display" id="hRate">—</div>
+        <div class="sub" id="hRateSub">measuring…</div>
+      </div>
+      <div class="hstat">
+        <h2>Projected</h2>
+        <div class="bignum display" id="hProj">—</div>
+        <div class="sub" id="hProjSub">per month, at the current rate</div>
+      </div>
+      <div class="hstat">
+        <h2>Your pool share</h2>
+        <div class="bignum display" id="hShare">—</div>
+        <div class="sub" id="hShareSub">of all staked weight</div>
+      </div>
+    </div>
+    <div class="hairline"></div>
+    <div class="strip-label"><span class="live-dot"></span>The round</div>
+    <div class="herostrip">
+      <div class="hstat">
+        <h2>Round</h2>
+        <div class="bignum display" id="rId">—</div>
+        <div class="countbar"><div id="rBar" style="width:0%"></div></div>
+        <div class="sub" id="rStatus">—</div>
+      </div>
+      <div class="hstat">
+        <h2>Round pot</h2>
+        <div class="bignum display" id="rPot">—</div>
+        <div class="sub" id="rPotSub">wagered by miners this round</div>
+      </div>
+      <div class="hstat">
+        <h2>Your cut of this pot</h2>
+        <div class="bignum display" id="rCut" style="cursor:help">—</div>
+        <div class="sub">stakers share <b id="rStakerPct">—</b> of every pot</div>
+      </div>
+      <div class="hstat">
+        <h2>Mining signal</h2>
+        <div class="bignum display" id="rMine">—</div>
+        <div class="sub" id="rMineSub">—</div>
+      </div>
+    </div>
+    </div>
+    </div>
+    <div class="netrow" id="netrow"></div>
+  </div></div>
+
+  <div class="grid">
+    <div class="card"><div class="face">
+      <h2>Auto-staker wallet <span id="lockPill"></span></h2>
+      <div id="walletAddr" class="mono dim" style="font-size:10.5px; word-break:break-all">—</div>
+      <div class="row"><span class="k">ETH (gas + budget)</span><span id="walletEth" class="hero display">—</span></div>
+      <div id="ethPlan" class="dim" style="font-size:11px; line-height:1.5; margin:2px 0 4px; height:33px; overflow:hidden"></div>
+      <div class="row"><span class="k">SLVR</span><span id="walletSlvr" class="hero display">—</span></div>
+      <div class="row"><span class="k">SLVR price</span><span id="slvrPrice" class="v">—</span></div>
+      <div class="inline" style="margin-top:8px">
+        <button id="btnFund" class="metal" style="height:30px"><span style="padding:0 12px; font-size:12px">Fund</span></button>
+        <button id="btnBuyLockOpen" class="solid" style="height:30px; font-size:12px; padding:0 11px">Buy &amp; Lock</button>
+        <button id="btnLockOpen" class="solid" style="height:30px; font-size:12px; padding:0 11px">Lock SLVR</button>
+        <button id="btnBackup" class="chip">Backup</button>
+      </div>
+    </div></div>
+
+    <div class="card"><div class="face">
+      <h2>Your position</h2>
+      <div class="dd" id="tokenDD">
+        <button class="ddbtn" id="ddBtn" type="button">
+          <span class="lbl" id="ddLabel">—</span>
+          <svg width="11" height="7" viewBox="0 0 11 7"><path d="M1 1l4.5 4.5L10 1" stroke="rgba(255,255,255,.64)" fill="none" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        </button>
+        <div class="ddlist hidden" id="ddList"><div class="inner2" id="ddInner"></div></div>
+      </div>
+      <div class="row"><span class="k">Locked SLVR</span><span id="posLocked" class="v">—</span></div>
+      <div class="row"><span class="k">Status</span><span id="posStatus" class="v">—</span></div>
+      <div class="row"><span class="k">Rewards accrued</span><span id="posPending" class="hero display">—</span></div>
+      <div id="posWarn" class="note warn hidden"></div>
+    </div></div>
+
+    <div class="card"><div class="face">
+      <h2>Lifetime earnings <span id="mCounts" class="dim" style="letter-spacing:.02em; text-transform:none"></span></h2>
+      <div class="row"><span class="k">ETH claimed</span><span id="mClaimed" class="v">—</span></div>
+      <div class="row"><span class="k">ETH sent to hold wallet</span><span id="mHeld" class="v">—</span></div>
+      <div class="row"><span class="k">SLVR bought &amp; locked</span><span id="mBought" class="v">—</span></div>
+      <div class="row"><span class="k">SLVR mined</span><span id="mMined" class="v">—</span></div>
+      <div class="row"><span class="k">Mining: spent / won back</span><span id="mMine" class="v">—</span></div>
+    </div></div>
+  </div>
+
+  <div class="card"><div class="face">
+    <div class="chartHead" style="margin-bottom:8px">
+      <h2 style="margin:0">Live activity</h2>
+      <span class="spacer"></span>
+      <button id="btnHistory" class="chip">History →</button>
+    </div>
+    <div id="log" class="log">waiting…</div>
+  </div></div>
+
+  <footer>
+    RUNS ENTIRELY ON YOUR COMPUTER · YOUR KEY NEVER LEAVES THIS MACHINE · DRY-RUN MODE SENDS NOTHING ·
+    BUILT ON <span class="mono">@slvr-labs/sdk</span>
+  </footer>
+</div>
+
+<!-- ═══ settings modal ═══ -->
+<div id="settingsModal" class="overlay"><div class="modal wide"><div>
+  <h3 style="margin-bottom:12px">Settings</h3>
+  <div class="tabtrack" style="margin-bottom:12px">
+    <div class="tabslider" id="sTabSlider" aria-hidden="true"><i></i></div>
+    <button class="tabbtn active" data-stab="0">Claim split</button>
+    <button class="tabbtn" data-stab="1">Mining</button>
+    <button class="tabbtn" data-stab="2">General</button>
+  </div>
+
+  <!-- pane 0: claim split -->
+  <div id="sPanes" style="min-height:335px"><div id="sPane0">
+    <label style="margin-top:0">Apply a preset <span class="dim">(applies immediately across all tabs — you can still tweak individual settings and Save)</span></label>
+    <div class="inline" id="presetChips" style="gap:6px; margin-bottom:12px">
+      <button type="button" class="chip" data-preset="conservative">Conservative</button>
+      <button type="button" class="chip" data-preset="neutral">Neutral</button>
+      <button type="button" class="chip" data-preset="aggressive">Aggressive</button>
+    </div>
+    <p class="help" style="margin-top:0">How each claimed ETH reward is used. The sliders always add up to 100%.</p>
+    <label class="checkline" style="margin:0 0 10px">
+      <span class="switch"><input id="allocAuto" type="checkbox"><span class="track"></span><span class="knob"></span></span>
+      <span><b>Price-aware allocation</b> (recommended) — each claim routes the non-hold share to MINING when it's profitable, otherwise to BUYBACKS. The mine/buy sliders only apply when this is off.</span>
+    </label>
+    <div class="groupbox">
+    <div class="sliderrow" style="margin-top:0">
+      <div class="top"><span class="name">HOLD<small>send to your hold wallet as ETH</small></span><span class="pct" id="holdVal">10%</span></div>
+      <input id="holdPct" type="range" min="0" max="100" step="1" value="10">
+    </div>
+    <div class="sliderrow">
+      <div class="top"><span class="name">MINE<small>grid bets that earn SLVR</small></span><span class="pct" id="mineVal">45%</span></div>
+      <input id="minePct" type="range" min="0" max="100" step="1" value="45">
+    </div>
+    <div class="sliderrow">
+      <div class="top"><span class="name">BUY &amp; LOCK<small>buy SLVR, max-lock it, compound</small></span><span class="pct" id="buybackVal">45%</span></div>
+      <input id="buybackPct" type="range" min="0" max="100" step="1" value="45">
+    </div>
+    <div class="sumbar"><div class="s1" id="bar1"></div><div class="s2" id="bar2"></div><div class="s3" id="bar3"></div></div>
+    <div class="sumcaption">
+      <span><i style="background:var(--metal)"></i>Hold</span>
+      <span><i style="background:rgba(255,255,255,.44)"></i>Mine</span>
+      <span><i style="background:rgba(255,255,255,.18)"></i>Buy &amp; lock</span>
+    </div>
+    </div>
+    <label>Hold wallet address <span class="dim">(where the HOLD share goes — empty = stays in the auto-staker wallet)</span></label>
+    <input id="holdWallet" type="text" class="mono" placeholder="0x…">
+
+    <div class="groupbox" style="margin-top:12px">
+      <label class="checkline" style="margin:0 0 8px">
+        <span class="switch"><input id="buybackSmart" type="checkbox"><span class="track"></span><span class="knob"></span></span>
+        <span><b>Smart buybacks</b> — buy into sell pressure: hold the budget until the price dips below its recent average</span>
+      </label>
+      <div class="fgrid" id="buybackFields">
+        <div class="field">
+          <label style="margin-top:0">Dip trigger (%)</label>
+          <input id="buyDip" type="number" min="0" step="0.1">
+          <div class="hint">Buy when price is this far below its average</div>
+        </div>
+        <div class="field">
+          <label style="margin-top:0">Average lookback (min)</label>
+          <input id="buyLookback" type="number" min="5" step="5">
+          <div class="hint">The moving-average window</div>
+        </div>
+        <div class="field">
+          <label style="margin-top:0">Max ETH per cycle</label>
+          <input id="buyMaxCycle" type="number" min="0" step="0.001">
+          <div class="hint">Spreads big budgets over multiple buys</div>
+        </div>
+        <div class="field">
+          <label style="margin-top:0">Max wait (hours)</label>
+          <input id="buyMaxWait" type="number" min="1" step="1">
+          <div class="hint">Buy anyway if no dip comes — never waits forever</div>
+        </div>
+        <div class="field">
+          <label style="margin-top:0">Max price impact (%)</label>
+          <input id="buyMaxImpact" type="number" min="0" step="0.1">
+          <div class="hint">Trim each buy so it never moves the SLVR price more than this. 0 = no cap.</div>
+        </div>
+        <div class="field">
+          <label style="margin-top:0">Min interval (minutes)</label>
+          <input id="buyMinInterval" type="number" min="0" step="5">
+          <div class="hint">Don't buy more often than this — spreads deployment out over time.</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- pane 1: mining strategy -->
+  <div id="sPane1" class="hidden">
+    <div class="groupbox" style="margin-top:0; margin-bottom:14px">
+      <div style="font-weight:600; margin-bottom:2px">Spend limits</div>
+      <p class="help" style="margin:0 0 10px">Hard caps the automation never exceeds, whatever happens. They apply to automated mining + buybacks only — your own <b>Buy &amp; Lock</b> is your explicit choice and isn't limited by them. 0 = no cap.</p>
+      <div class="fgrid">
+        <div class="field">
+          <label style="margin-top:0">Max ETH per buy</label>
+          <input id="maxEthPerBuy" type="number" min="0" step="0.001">
+          <div class="hint">Ceiling on any single automated buyback</div>
+        </div>
+        <div class="field">
+          <label style="margin-top:0">Max buys per day</label>
+          <input id="maxBuysPerDay" type="number" min="0" step="1">
+          <div class="hint">Rolling 24h limit on the number of buybacks</div>
+        </div>
+        <div class="field">
+          <label style="margin-top:0">Max total spend per day (ETH)</label>
+          <input id="maxDailySpendEth" type="number" min="0" step="0.01">
+          <div class="hint">Rolling 24h ceiling across mining + buybacks combined</div>
+        </div>
+      </div>
+    </div>
+    <label class="checkline" style="margin-top:0; margin-bottom:14px">
+      <span class="switch"><input id="evGate" type="checkbox"><span class="track"></span><span class="knob"></span></span>
+      <span><b>EV-gated mining</b> — only play rounds estimated to be profitable (recommended)</span>
+    </label>
+    <div id="stratRow" class="hidden" style="margin:-6px 0 12px">
+      <label style="margin-top:0">Mining strategy <span class="dim">(hover a strategy for what it does; custom ones from strategies.custom.ts appear here too)</span></label>
+      <div class="inline" id="stratChips"></div>
+      <div id="stratDesc" class="hint" style="margin-top:7px"></div>
+      <div id="stratParams" class="fgrid" style="margin-top:8px"></div>
+    </div>
+    <div class="fgrid">
+      <div class="field">
+        <label style="margin-top:0">Minimum edge (%)</label>
+        <input id="minEdge" type="number" min="0" step="0.1">
+        <div class="hint">Required profit as % of stake · 0 = any profitable round</div>
+      </div>
+      <div class="field">
+        <label style="margin-top:0">Max pot size (ETH)</label>
+        <input id="maxPot" type="number" min="0" step="0.01">
+        <div class="hint">Never enter rounds above this pot · 0 = no cap</div>
+      </div>
+      <div class="field">
+        <label style="margin-top:0">Max ETH per round</label>
+        <input id="maxMine" type="number" min="0" step="0.01">
+        <div class="hint">Upper cap on one bet. The miner paces the budget automatically, so real bets are usually smaller and grow as you add ETH.</div>
+      </div>
+      <div class="field">
+        <label style="margin-top:0">Betting window guard (s)</label>
+        <input id="minSeconds" type="number" min="0" step="1">
+        <div class="hint">Skip rounds closing within this many seconds</div>
+      </div>
+    </div>
+    <div class="field" style="margin-top:12px">
+      <label style="margin-top:0">Mining pace</label>
+      <div class="inline" id="pacePicker" style="gap:6px">
+        <button type="button" class="chip pchip" data-pace="large">Fewer, larger bets</button>
+        <button type="button" class="chip pchip" data-pace="balanced">Balanced</button>
+        <button type="button" class="chip pchip" data-pace="small">More, smaller bets</button>
+      </div>
+      <div class="hint">Fewer, larger bets lose less to gas; more, smaller bets spread risk. Either way the budget is paced to last until the next claim.</div>
+      <input type="hidden" id="minePace">
+    </div>
+    <div style="margin-top:10px">
+      <label class="checkline">
+        <span class="switch"><input id="cashOut" type="checkbox"><span class="track"></span><span class="knob"></span></span>
+        <span>Value mined SLVR as <b>cash-out</b> (net of the 10% refining fee)</span>
+      </label>
+      <label class="checkline">
+        <span class="switch"><input id="restake" type="checkbox"><span class="track"></span><span class="knob"></span></span>
+        <span>Auto max-lock the SLVR won from mining (compound it into your position)</span>
+      </label>
+    </div>
+  </div>
+
+  <!-- pane 2: general -->
+  <div id="sPane2" class="hidden">
+    <div class="fgrid">
+      <div class="field">
+        <label style="margin-top:0">Claim threshold (ETH)</label>
+        <input id="minClaim" type="number" min="0" step="0.0001">
+        <div class="hint">Claim rewards once at least this much has accrued</div>
+      </div>
+      <div class="field">
+        <label style="margin-top:0">Cycle interval (seconds)</label>
+        <input id="interval" type="number" min="10" step="5">
+        <div class="hint">How often the automation checks and acts</div>
+      </div>
+    </div>
+    <div class="field" style="margin-top:12px">
+      <label style="margin-top:0">Custom RPC endpoint</label>
+      <input id="rpcUrl" type="text" class="mono" placeholder="https://rpc.mainnet.chain.robinhood.com">
+      <div class="hint">
+        Optional — empty uses the public Robinhood Chain RPC. For noticeably better
+        speed and reliability, get a <b style="color:var(--w64)">free private endpoint</b> from
+        <a href="https://www.alchemy.com/" target="_blank" rel="noopener" style="color:var(--chrome)">Alchemy</a> or
+        <a href="https://chainstack.com/" target="_blank" rel="noopener" style="color:var(--chrome)">Chainstack</a>:
+        create an account, add the Robinhood Chain network, and paste the HTTPS URL here. Applies immediately after saving.
+      </div>
+    </div>
+    <div class="field" style="margin-top:12px">
+      <label style="margin-top:0">Display</label>
+      <div class="inline" style="gap:6px; flex-wrap:wrap">
+        <span class="dim" style="font-size:11px; align-self:center">Text size</span>
+        <button type="button" class="chip szchip" data-uiscale="1">Normal</button>
+        <button type="button" class="chip szchip" data-uiscale="1.15">Large</button>
+        <button type="button" class="chip szchip" data-uiscale="1.3">Larger</button>
+        <span class="spacer"></span>
+        <label class="checkline" style="margin:0">
+          <span class="switch"><input id="hiContrast" type="checkbox"><span class="track"></span><span class="knob"></span></span>
+          <span>High contrast</span>
+        </label>
+      </div>
+      <div class="hint">Bumps the whole interface up for legibility. Saved on this device.</div>
+    </div>
+    <div class="note" style="margin-top:12px">
+      Your wallet, settings, and history live at
+      <span id="storageLine" class="mono" style="font-size:10.5px; color:var(--w64)">—</span>
+      <span id="storageProfile"></span> — back up the recovery file and this folder is safe to lose.
+    </div>
+  </div>
+
+  </div>
+  <div class="inline" style="margin-top:16px">
+    <button id="btnSettingsClose" class="chip">Close</button>
+    <span class="spacer"></span>
+    <button id="btnSaveCfg" class="metal"><span>Save settings</span></button>
+  </div>
+</div></div></div>
+
+<!-- ═══ onboarding — first-run wizard ═══ -->
+<div id="ob" class="ob"><div class="inner">
+  <div class="brand">
+    <img src="/SLVR_S_19x32.png" alt="SLVR" style="height:26px">
+    <h1 class="display" style="font-size:19px">SLVR <span>Auto-Staker</span></h1>
+  </div>
+  <div class="steps" id="obDots"></div>
+  <p class="help" id="obStepCaption" style="text-align:center; margin:-10px 0 16px; font-size:11px"></p>
+
+  <div class="card"><div class="face" style="padding:22px">
+    <!-- step 1: welcome -->
+    <div id="obStep1">
+      <h3 class="display">Welcome to your auto-staker</h3>
+      <p class="help sub">
+        This app claims the staking rewards your locked SLVR earns and reinvests them
+        automatically, the way you choose. It runs only on this computer and starts in
+        <b style="color:var(--fg)">dry-run</b> — it shows what it would do and sends nothing — until you decide to go live.
+      </p>
+      <p class="help sub" style="box-shadow:inset 0 0 0 1px var(--panel); border-radius:8px; padding:10px 12px; margin-bottom:6px">
+        It uses <b style="color:var(--fg)">real money on a real chain</b>. We'll walk through each part before
+        anything can spend a cent, and you'll see a preview of the very first live action before it happens.
+      </p>
+      <div class="obnav">
+        <span class="spacer"></span>
+        <button id="obNext1" class="metal"><span>Get started</span></button>
+      </div>
+    </div>
+
+    <!-- step 2: how it earns (education) -->
+    <div id="obStep2" class="hidden">
+      <h3 class="display">How it earns — three ways</h3>
+      <p class="help sub">Worth understanding before any money moves. Each behaves differently.</p>
+      <div class="choice" style="cursor:default">
+        <span class="ico">💧</span>
+        <span><span class="t">Staking rewards</span><br><span class="d">Your locked SLVR continuously earns ETH. The app claims it for you and splits each claim.</span></span>
+      </div>
+      <div class="choice" style="cursor:default">
+        <span class="ico">⛏️</span>
+        <span><span class="t">Mining</span><br><span class="d">Grid bets that are statistically favorable over time but <b style="color:var(--fg)">individually risky</b> — any single round can lose. It's betting.</span></span>
+      </div>
+      <div class="choice" style="cursor:default">
+        <span class="ico">🔒</span>
+        <span><span class="t">Buy &amp; lock (compounding)</span><br><span class="d">Buys SLVR and max-locks it into your position. This is <b style="color:var(--fg)">permanent — locked SLVR is burned and can never be withdrawn</b>.</span></span>
+      </div>
+      <label class="checkline" style="margin-top:14px">
+        <span class="switch"><input id="obAckLock" type="checkbox"><span class="track"></span><span class="knob"></span></span>
+        <span><b>I understand locked SLVR can never be withdrawn.</b></span>
+      </label>
+      <div class="obnav">
+        <button class="chip" data-obback="1">Back</button>
+        <span class="spacer"></span>
+        <button id="obNext2edu" class="metal" disabled><span>Continue</span></button>
+      </div>
+    </div>
+
+    <!-- step 3: wallet -->
+    <div id="obStep3" class="hidden">
+      <h3 class="display">Set up your wallet</h3>
+      <p class="help sub">The auto-staker manages everything in this wallet. Create a fresh one just for it.</p>
+      <button class="choice" id="obChooseCreate">
+        <span class="ico">✨</span>
+        <span><span class="t">Create a fresh wallet</span><br><span class="d">Recommended — fund it with only what the automation should manage.</span></span>
+      </button>
+      <button class="choice" id="obChooseImport">
+        <span class="ico">🔑</span>
+        <span><span class="t">Use an existing account</span><br><span class="d">Import a <b style="color:var(--fg)">dedicated</b> wallet's private key — not your main one. The automation manages everything it holds.</span></span>
+      </button>
+      <button class="choice" id="obChooseRestore">
+        <span class="ico">📄</span>
+        <span><span class="t">Restore from a recovery file</span><br><span class="d">Pick the recovery file you downloaded from a previous setup.</span></span>
+      </button>
+      <input id="obRestoreFile" type="file" accept="application/json,.json" class="hidden">
+      <div class="obnav">
+        <button class="chip" data-obback="2">Back</button>
+        <span class="spacer"></span>
+      </div>
+    </div>
+
+    <!-- step 4: password + verified backup -->
+    <div id="obStep4" class="hidden">
+      <!-- phase A: set a password -->
+      <div id="obPwPhase">
+        <h3 class="display" id="obStep4Title">Protect it with a password</h3>
+        <p class="help sub">
+          With a password, your key is stored <b style="color:var(--fg)">encrypted</b> and the app asks to
+          unlock it each time it starts. Skipping stores it unprotected on this computer.
+        </p>
+        <div id="obImportKeyWrap" class="hidden">
+          <label style="margin-top:0">Private key</label>
+          <input id="obImportKey" type="password" class="mono" placeholder="0x…" autocomplete="off" data-1p-ignore data-lpignore="true" data-bwignore data-form-type="other">
+        </div>
+        <label>Password <span class="dim">(8+ characters)</span></label>
+        <input id="obPassword" type="password" autocomplete="off" data-1p-ignore data-lpignore="true" data-bwignore data-form-type="other" placeholder="password">
+        <label>Confirm password</label>
+        <input id="obPassword2" type="password" autocomplete="off" data-1p-ignore data-lpignore="true" data-bwignore data-form-type="other" placeholder="same password again">
+        <div class="obnav">
+          <button class="chip" data-obback="3">Back</button>
+          <span class="spacer"></span>
+          <button id="obSkipPw" class="solid">Skip password</button>
+          <button id="obNext2" class="metal"><span>Continue</span></button>
+        </div>
+      </div>
+      <!-- phase B: back it up + verify -->
+      <div id="obBackupPhase" class="hidden">
+        <h3 class="display">Back up your wallet</h3>
+        <p class="help sub">
+          If this computer dies, this file is the only way to recover the funds. Download it,
+          then <b style="color:var(--fg)">re-select it below to verify</b> it saved correctly — don't leave this for later.
+        </p>
+        <label style="margin-top:0">Your auto-staker address</label>
+        <div class="addrline"><span id="obAddr"></span></div>
+        <div class="inline" style="margin-top:12px">
+          <button id="obDownload" class="solid">⬇ Download recovery file</button>
+          <button id="obShowKey" class="chip">Show private key</button>
+        </div>
+        <div id="obKeyBox" class="keybox hidden" style="margin-top:10px"></div>
+        <label style="margin-top:14px">Verify the backup <span class="dim">(re-select the file you just downloaded)</span></label>
+        <button id="obVerifyBtn" class="solid" style="width:100%">📂 Choose the downloaded file to verify</button>
+        <input id="obVerifyFile" type="file" accept="application/json,.json" class="hidden">
+        <div id="obVerifyResult" class="help" style="margin-top:8px"></div>
+        <div class="obnav">
+          <span class="spacer"></span>
+          <button id="obNext3" class="metal" disabled><span>Continue</span></button>
+        </div>
+      </div>
+    </div>
+
+    <!-- step 5: pick a risk preset -->
+    <div id="obStep5" class="hidden">
+      <h3 class="display">Pick a starting point</h3>
+      <p class="help sub">
+        A preset fills in every setting for you — you can change any of it now or later in ⚙ Settings.
+        In all of them, the automation spends <b style="color:var(--fg)">claimed rewards only</b>; your deposit is never auto-spent.
+      </p>
+      <div id="obPresetCards"></div>
+      <div class="obnav">
+        <span class="spacer"></span>
+        <button id="obNext5" class="metal"><span>Continue</span></button>
+      </div>
+    </div>
+
+    <!-- step 6: spend limits -->
+    <div id="obStep6" class="hidden">
+      <h3 class="display">Your spend limits</h3>
+      <p class="help sub">
+        A promise the automation keeps: it will <b style="color:var(--fg)">never exceed these</b>, whatever happens.
+        Prefilled from your preset — adjust if you like. They govern mining + buybacks; your own Buy &amp; Lock isn't limited by them.
+      </p>
+      <div class="fgrid">
+        <div class="field">
+          <label style="margin-top:0">Max ETH per buy</label>
+          <input id="obMaxEthPerBuy" type="number" min="0" step="0.001">
+          <div class="hint">Ceiling on any single automated buyback</div>
+        </div>
+        <div class="field">
+          <label style="margin-top:0">Max buys per day</label>
+          <input id="obMaxBuysPerDay" type="number" min="0" step="1">
+          <div class="hint">Rolling 24h limit on buybacks</div>
+        </div>
+        <div class="field">
+          <label style="margin-top:0">Max total spend per day (ETH)</label>
+          <input id="obMaxDailySpend" type="number" min="0" step="0.01">
+          <div class="hint">Rolling 24h ceiling: mining + buybacks combined</div>
+        </div>
+        <div class="field">
+          <label style="margin-top:0">Max ETH per mining round</label>
+          <input id="obMaxMine" type="number" min="0" step="0.001">
+          <div class="hint">Upper cap on one bet (paced automatically)</div>
+        </div>
+      </div>
+      <div class="obnav">
+        <button class="chip" data-obback="5">Back</button>
+        <span class="spacer"></span>
+        <button id="obNext6" class="metal"><span>Save &amp; continue</span></button>
+      </div>
+    </div>
+
+    <!-- step 7: fund it -->
+    <div id="obStep7" class="hidden">
+      <h3 class="display">Fund your auto-staker</h3>
+      <p class="help sub">
+        Send a little <b style="color:var(--fg)">ETH</b> (a few dollars' worth is enough to watch it work) and optionally
+        <b style="color:var(--fg)">SLVR</b>. Your limits are already active. The deposit just sits in the wallet —
+        <b style="color:var(--fg)">nothing is invested yet</b>.
+      </p>
+      <label style="margin-top:0">Auto-staker address</label>
+      <div class="addrline"><span id="obFundAddr"></span><button id="obCopyAddr" class="chip">Copy</button></div>
+      <div class="row" style="margin-top:6px"><span class="k">Balance so far</span><span id="obFundBal" class="v">0 ETH · 0 SLVR</span></div>
+
+      <div id="obFundConnect" style="margin-top:6px">
+        <button id="obConnect" class="metal" style="width:100%"><span>Connect browser wallet</span></button>
+        <p class="help dim" style="margin-top:8px">No wallet extension? Copy the address above and send from any wallet or exchange (network: Robinhood Chain).</p>
+      </div>
+
+      <div id="obFundSend" class="hidden" style="margin-top:2px">
+        <div class="row" style="padding-top:8px"><span class="k">Connected as</span><span id="obFundFrom" class="v mono" style="font-size:10.5px">—</span></div>
+        <label>Send ETH</label>
+        <div class="inline">
+          <input id="obEthAmt" type="number" min="0" step="0.001" placeholder="0.01" style="flex:1">
+          <button id="obSendEth" class="metal"><span>Send</span></button>
+        </div>
+        <label>Send SLVR</label>
+        <div class="inline">
+          <input id="obSlvrAmt" type="number" min="0" step="0.01" placeholder="0.0" style="flex:1">
+          <button id="obSendSlvr" class="metal"><span>Send</span></button>
+        </div>
+      </div>
+
+      <div class="obnav">
+        <button class="chip" data-obback="6">Back</button>
+        <span class="spacer"></span>
+        <button id="obSkipFund" class="chip">Skip for now</button>
+        <button id="obNext7" class="metal"><span>Continue</span></button>
+      </div>
+    </div>
+
+    <!-- step 8: put it to work (explicit allocation, Buy & Lock only) -->
+    <div id="obStep8" class="hidden">
+      <h3 class="display">Put it to work</h3>
+      <p class="help sub">
+        Your deposit isn't invested automatically. This is the one deliberate step that creates your
+        staking position: buy some SLVR now and <b style="color:var(--fg)">max-lock it (permanent)</b>. Whatever you
+        don't allocate simply stays in the wallet as reserve. Nothing moves until you confirm.
+      </p>
+      <div class="row"><span class="k">Spendable now</span><span id="obAllocBal" class="v">—</span></div>
+      <label>Amount to Buy &amp; Lock (ETH)</label>
+      <div class="inline">
+        <input id="obAllocAmt" type="number" min="0" step="0.001" placeholder="0.0" style="flex:1">
+        <button id="obAllocMax" class="chip">Max</button>
+      </div>
+      <div id="obAllocEstimate" class="help" style="margin-top:8px; min-height:16px"></div>
+      <button id="obAllocBuy" class="metal" style="width:100%; margin-top:10px"><span>Buy &amp; Lock (permanent)</span></button>
+      <div class="obnav">
+        <button class="chip" data-obback="7">Back</button>
+        <span class="spacer"></span>
+        <button id="obSkipAlloc" class="chip">Skip — allocate later</button>
+        <button id="obNext8" class="metal hidden"><span>Continue</span></button>
+      </div>
+    </div>
+
+    <!-- step 9: rehearsal (dry-run) -->
+    <div id="obStep9" class="hidden">
+      <h3 class="display">Rehearse in dry-run</h3>
+      <p class="help sub">
+        You're in <b style="color:var(--fg)">dry-run</b> — the app decides and logs what it <i>would</i> do, but sends nothing.
+        Run a practice cycle and watch the decisions on your dashboard.
+      </p>
+      <div class="choice" style="cursor:default"><span class="ico">✓</span><span><span class="t">Watch a claim decision</span><br><span class="d">When rewards would be claimed and how they'd split.</span></span></div>
+      <div class="choice" style="cursor:default"><span class="ico">✓</span><span><span class="t">Watch a mining decision</span><br><span class="d">Whether a round is worth betting, and the paced bet size.</span></span></div>
+      <div class="choice" style="cursor:default"><span class="ico">✓</span><span><span class="t">Watch a buyback decision</span><br><span class="d">Whether to buy now/on a dip, trimmed to your limits.</span></span></div>
+      <button id="obRehearse" class="solid" style="width:100%; margin-top:12px">▶ Run a dry-run cycle now</button>
+      <div id="obRehearseResult" class="help" style="margin-top:8px"></div>
+      <div class="obnav">
+        <button class="chip" data-obback="8">Back</button>
+        <span class="spacer"></span>
+        <button id="obNext9" class="metal"><span>Continue</span></button>
+      </div>
+    </div>
+
+    <!-- step 10: the LIVE gate (preview) -->
+    <div id="obStep10" class="hidden">
+      <h3 class="display">Before you go live</h3>
+      <p class="help sub">Here's exactly what the automation will do once you flip to LIVE — no surprises:</p>
+      <div id="obLivePreview" class="groupbox" style="margin:0 0 12px"></div>
+      <p class="help sub" style="margin-bottom:6px">
+        You'll stay in dry-run until you flip the <b style="color:var(--fg)">LIVE</b> switch on the dashboard — which asks you to
+        confirm this same plan first. Your deposit is never auto-spent; only claimed rewards are.
+      </p>
+      <div class="obnav">
+        <button class="chip" data-obback="9">Back</button>
+        <span class="spacer"></span>
+        <button id="obNext10" class="metal"><span>Continue</span></button>
+      </div>
+    </div>
+
+    <!-- step 11: finish -->
+    <div id="obStep11" class="hidden">
+      <h3 class="display">You're all set</h3>
+      <p class="help sub">A few things to know before you head to the dashboard:</p>
+      <div class="choice" style="cursor:default"><span class="ico">💾</span><span><span class="t">Your data lives on this computer</span><br><span class="d">Wallet, settings and history are stored in your OS app-data folder — not in the cloud.</span></span></div>
+      <div class="choice" style="cursor:default"><span class="ico">⏻</span><span><span class="t">Stop &amp; restart any time</span><br><span class="d">Use Start/Stop on the dashboard. Closing the app never loses funds — they're on-chain in your wallet.</span></span></div>
+      <div class="choice" style="cursor:default"><span class="ico">🔁</span><span><span class="t">Restore on a new machine</span><br><span class="d">Install the app there and restore from your recovery file to pick up where you left off.</span></span></div>
+      <div class="obnav">
+        <span class="spacer"></span>
+        <button id="obFinish" class="metal"><span>Go to dashboard</span></button>
+      </div>
+    </div>
+  </div></div>
+
+  <p class="help" style="text-align:center; margin-top:14px">
+    <span class="dim">Everything stays on this computer · dry-run by default · built on @slvr-labs/sdk</span>
+  </p>
+</div></div>
+
+<!-- confirm modal (replaces native confirm()) -->
+<div id="confirmModal" class="overlay"><div class="modal"><div>
+  <h3 id="confirmTitle"></h3>
+  <p class="help" id="confirmBody" style="margin-bottom:4px"></p>
+  <div class="inline" style="margin-top:14px">
+    <button id="confirmCancel" class="chip">Cancel</button>
+    <span class="spacer"></span>
+    <button id="confirmOkDanger" class="dangerbtn hidden"></button>
+    <button id="confirmOk" class="metal"><span id="confirmOkLabel">Confirm</span></button>
+  </div>
+</div></div></div>
+
+<!-- unlock modal -->
+<div id="unlockModal" class="overlay"><div class="modal"><div>
+  <h3>🔒 Unlock your wallet</h3>
+  <p class="help">This wallet is password-protected. Unlock it for this session — the automation can't sign anything until you do.</p>
+  <input id="unlockPassword" type="password" placeholder="password" autocomplete="off" data-1p-ignore data-lpignore="true" data-bwignore data-form-type="other">
+  <div class="inline" style="margin-top:12px">
+    <button id="btnUnlockLater" class="chip">Later</button>
+    <span class="spacer"></span>
+    <button id="btnUnlock" class="metal"><span>Unlock</span></button>
+  </div>
+</div></div></div>
+
+<!-- backup chooser -->
+<div id="backupModal" class="overlay"><div class="modal"><div>
+  <h3>Back up your wallet</h3>
+  <p class="help">Either one can restore this account on a fresh copy of the app.</p>
+  <button class="choice" id="btnBkFile" style="display:flex; align-items:center; gap:12px; width:100%; text-align:left; border-radius:10px; background:var(--raised); padding:12px 14px; margin-bottom:8px; box-shadow:inset 0 0 0 1px var(--panel)">
+    <span style="font-size:16px">📄</span>
+    <span><span style="font-size:13px; font-weight:700">Download recovery file</span><br><span style="font-size:11.5px; font-weight:300; color:var(--w64)">Encrypted with your password — safe to store anywhere.</span></span>
+  </button>
+  <button class="choice" id="btnBkKey" style="display:flex; align-items:center; gap:12px; width:100%; text-align:left; border-radius:10px; background:var(--raised); padding:12px 14px; box-shadow:inset 0 0 0 1px var(--panel)">
+    <span style="font-size:16px">🔑</span>
+    <span><span style="font-size:13px; font-weight:700">Show private key</span><br><span style="font-size:11.5px; font-weight:300; color:var(--w64)">Reveal it once to write down. Requires your password.</span></span>
+  </button>
+  <div class="inline" style="margin-top:12px">
+    <span class="spacer"></span>
+    <button id="btnBackupClose" class="chip">Close</button>
+  </div>
+</div></div></div>
+
+<!-- history page -->
+<div id="historyModal" class="overlay"><div class="modal wide"><div>
+  <div class="chartHead" style="margin-bottom:10px">
+    <h3 style="margin:0">History</h3>
+    <span class="spacer"></span>
+    <button id="btnHistoryClose" class="chip">Close</button>
+  </div>
+  <div style="max-height:60vh; overflow-y:auto">
+    <table>
+      <thead><tr><th>When</th><th>What</th><th>ETH</th><th>SLVR</th><th>Tx</th></tr></thead>
+      <tbody id="eventRows"><tr><td colspan="5">no activity yet</td></tr></tbody>
+    </table>
+  </div>
+</div></div></div>
+
+<!-- lock SLVR modal -->
+<div id="lockModal" class="overlay"><div class="modal"><div>
+  <h3>Max-lock SLVR (permanent)</h3>
+  <p class="help">
+    Max-locking <b style="color:var(--fg)">burns</b> the SLVR into your permanent position — the
+    strongest lock: highest weight, earns ETH forever, and can
+    <b style="color:var(--fg)">never be withdrawn</b>. Adds to your permanent lock, or creates it.
+  </p>
+  <div class="row" style="padding-top:0">
+    <span class="k">In your wallet</span>
+    <span id="lockAvail" class="v">—</span>
+  </div>
+  <div class="amount">
+    <span class="unit"><img src="/SLVR_S_19x32.png" alt="">SLVR</span>
+    <input id="lockAmount" type="number" min="0" step="0.01" placeholder="0.00">
+  </div>
+  <div class="inline" style="margin-top:10px">
+    <button id="btnLockAll" class="chip">All</button>
+    <span id="lockMsg" class="muted" style="font-size:11.5px"></span>
+    <span class="spacer"></span>
+    <button id="btnLockClose" class="chip">Close</button>
+    <button id="btnMaxLock" class="metal"><span>Max-lock</span></button>
+  </div>
+</div></div></div>
+
+<!-- buy SLVR with ETH and zap it into the position -->
+<div id="buyLockModal" class="overlay"><div class="modal"><div>
+  <h3>Buy &amp; Lock SLVR</h3>
+  <p class="help">
+    Spend wallet ETH to buy SLVR on the market and <b style="color:var(--fg)">permanently max-lock</b> it
+    straight into your position in one step. The SLVR is <b style="color:var(--fg)">burned</b> into the
+    lock (highest weight, earns ETH forever, never withdrawable). A gas reserve is always kept back.
+  </p>
+  <div class="row" style="padding-top:0">
+    <span class="k">Spendable ETH</span>
+    <span id="buyLockAvail" class="v">—</span>
+  </div>
+  <div class="amount">
+    <span class="unit">ETH</span>
+    <input id="buyLockAmount" type="number" min="0" step="0.01" placeholder="0.00">
+  </div>
+  <div id="buyLockEst" class="muted" style="font-size:11.5px; line-height:17px; margin-top:6px; min-height:17px"></div>
+  <div class="inline" style="margin-top:10px">
+    <button id="btnBuyLockAll" class="chip">All</button>
+    <span id="buyLockMsg" class="muted" style="font-size:11.5px"></span>
+    <span class="spacer"></span>
+    <button id="btnBuyLockClose" class="chip">Close</button>
+    <button id="btnBuyLockDo" class="metal"><span>Buy &amp; Lock</span></button>
+  </div>
+</div></div></div>
+
+<!-- backup-key modal (dashboard reveal) -->
+<div id="keyModal" class="overlay"><div class="modal"><div>
+  <h3>⚠ Back up this private key</h3>
+  <p class="help">Anyone with this key controls the wallet. Store it somewhere safe — it will <b style="color:var(--fg)">not</b> be shown again automatically.</p>
+  <label style="margin-top:0">Address</label>
+  <div class="addrline"><span id="keyModalAddr"></span></div>
+  <label>Private key</label>
+  <div class="keybox" id="keyModalKey"></div>
+  <div class="inline" style="margin-top:12px">
+    <button id="btnCopyKey" class="chip">Copy key</button>
+    <span class="spacer"></span>
+    <button id="btnKeyDone" class="metal"><span>I saved it — close</span></button>
+  </div>
+</div></div></div>
+
+<!-- reveal-password modal -->
+<div id="revealModal" class="overlay"><div class="modal"><div>
+  <h3>Back up private key</h3>
+  <p class="help">Enter your wallet password to reveal the key.</p>
+  <input id="revealPassword" type="password" placeholder="password" autocomplete="off" data-1p-ignore data-lpignore="true" data-bwignore data-form-type="other">
+  <div class="inline" style="margin-top:12px">
+    <button id="btnRevealCancel" class="chip">Cancel</button>
+    <span class="spacer"></span>
+    <button id="btnRevealGo" class="metal"><span>Reveal</span></button>
+  </div>
+</div></div></div>
+
+<!-- fund modal -->
+<div id="fundModal" class="overlay"><div class="modal"><div>
+  <h3>Fund the auto-staker</h3>
+  <p class="help">
+    Send ETH (for gas + mining) and optionally SLVR to the auto-staker's wallet.
+    Connect your regular wallet (MetaMask etc.), or send to the address below from anywhere.
+  </p>
+  <label style="margin-top:0">Auto-staker address</label>
+  <div class="addrline"><span id="fundAddr"></span><button id="btnCopyAddr" class="chip">Copy</button></div>
+
+  <div id="fundConnect" style="margin-top:12px">
+    <button id="btnConnect" class="metal" style="width:100%"><span>Connect browser wallet</span></button>
+    <p class="help dim" style="margin-top:8px">No wallet extension? Copy the address above and send from any wallet or exchange (network: Robinhood Chain).</p>
+  </div>
+
+  <div id="fundSend" class="hidden" style="margin-top:4px">
+    <div class="row" style="padding-top:10px"><span class="k">Connected as</span><span id="fundFrom" class="v mono" style="font-size:10.5px">—</span></div>
+    <label>Send ETH</label>
+    <div class="inline">
+      <input id="fundEthAmt" type="number" min="0" step="0.001" placeholder="0.01" style="flex:1">
+      <button id="btnSendEth" class="metal"><span>Send</span></button>
+    </div>
+    <label>Send SLVR</label>
+    <div class="inline">
+      <input id="fundSlvrAmt" type="number" min="0" step="0.01" placeholder="0.0" style="flex:1">
+      <button id="btnSendSlvr" class="metal"><span>Send</span></button>
+    </div>
+  </div>
+
+  <div class="hairline" style="margin:14px 0 10px"></div>
+  <h2 style="margin-bottom:6px">Bridge from another chain</h2>
+  <p class="help" style="margin-bottom:8px">
+    Have ETH on another network? Bridge it straight to the auto-staker —
+    usually under a minute, powered by <a href="https://relay.link" target="_blank" rel="noopener" style="color:var(--chrome)">Relay</a>.
+  </p>
+  <div class="inline" id="bridgeChains" style="margin-bottom:8px"></div>
+  <div class="inline">
+    <input id="bridgeAmt" type="number" min="0" step="0.001" placeholder="amount in ETH" style="flex:1">
+    <button id="btnBridgeQuote" class="solid">Get quote</button>
+  </div>
+  <div id="bridgeQuote" class="note hidden" style="margin-top:8px"></div>
+  <div class="inline hidden" id="bridgeExecRow" style="margin-top:8px">
+    <span id="bridgeStatus" class="muted" style="font-size:12px; flex:1">—</span>
+    <button id="btnBridgeGo" class="metal"><span>Bridge now</span></button>
+  </div>
+
+  <div class="inline" style="margin-top:14px">
+    <span class="spacer"></span>
+    <button id="btnFundClose" class="chip">Close</button>
+  </div>
+</div></div></div>
+
+<div id="toast" class="toast"><div id="toastBody"></div></div>
+
+<script>
+const $ = (id) => document.getElementById(id);
+window.addEventListener('error', (e) => {
+  console.error('page error:', e.message);
+  const t = document.getElementById('toastBody');
+  if (t) { t.textContent = 'Something went wrong on the page — try reloading. (' + e.message + ')'; t.style.setProperty('--ring', 'rgba(253,55,72,.4)'); document.getElementById('toast').style.display = 'block'; }
+});
+const fmt = (wei, dp = 6) => {
+  const s = BigInt(wei ?? 0n).toString().padStart(19, '0');
+  const whole = s.slice(0, -18) || '0';
+  const frac = s.slice(-18, -18 + dp).replace(/0+$/, '');
+  return frac ? `${whole}.${frac}` : whole;
+};
+const esc = (x) => String(x ?? '').replace(/[&<>"']/g, (c) => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const EVENT_LABELS = {
+  claim: '💎 Claimed ETH rewards', hold_transfer: '🏦 Sent to hold wallet',
+  buyback: '🛒 Bought SLVR', max_lock: '🔒 Max-locked SLVR',
+  mine_bet: '⛏ Mining bet', mine_settle: '💰 Mining round settled',
+  stake: '📌 Staked veNFT', error: '⚠ Error',
+};
+
+let formDirty = false;
+let formLoaded = false;
+let lastState = null;
+let formStrategy = '';        // pending mining strategy for the settings Save
+let PRESETS = null;           // risk presets, fetched once from /api/presets
+
+function toast(msg, ok = true) {
+  const t = $('toast');
+  $('toastBody').textContent = msg;
+  $('toastBody').style.setProperty('--ring', ok ? 'rgba(255,255,255,.32)' : 'rgba(253,55,72,.4)');
+  t.style.display = 'block';
+  clearTimeout(t._h);
+  t._h = setTimeout(() => (t.style.display = 'none'), 4500);
+}
+
+async function api(path, body) {
+  const res = await fetch(path, body === undefined ? {} : {
+    method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body),
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data.error || res.statusText);
+  return data;
+}
+
+/* ── styled confirm dialog ── */
+function uiConfirm({ title, body, okLabel = 'Confirm', danger = false }) {
+  return new Promise((resolve) => {
+    $('confirmTitle').textContent = title;
+    $('confirmBody').innerHTML = body;
+    const okMetal = $('confirmOk');
+    const okDanger = $('confirmOkDanger');
+    okMetal.classList.toggle('hidden', danger);
+    okDanger.classList.toggle('hidden', !danger);
+    $('confirmOkLabel').textContent = okLabel;
+    okDanger.textContent = okLabel;
+    $('confirmModal').classList.add('open');
+
+    const done = (val) => {
+      $('confirmModal').classList.remove('open');
+      okMetal.onclick = okDanger.onclick = $('confirmCancel').onclick = null;
+      document.removeEventListener('keydown', onKey);
+      resolve(val);
+    };
+    const onKey = (e) => { if (e.key === 'Escape') done(false); };
+    okMetal.onclick = () => done(true);
+    okDanger.onclick = () => done(true);
+    $('confirmCancel').onclick = () => done(false);
+    document.addEventListener('keydown', onKey);
+  });
+}
+
+/* ── slider trio helper: keeps the three values summing to 100 ── */
+function makeTrio(ids, labels, bars, onInput) {
+  function paint() {
+    ids.forEach((id, i) => { $(labels[i]).textContent = $(id).value + '%'; });
+    if (bars) ids.forEach((id, i) => { $(bars[i]).style.width = $(id).value + '%'; });
+  }
+  function rebalance(changed) {
+    const v = Number($(changed).value);
+    const others = ids.filter((i) => i !== changed);
+    const rest = 100 - v;
+    const o1 = Number($(others[0]).value), o2 = Number($(others[1]).value);
+    const sum = o1 + o2;
+    let a = sum > 0 ? Math.round((rest * o1) / sum) : Math.floor(rest / 2);
+    a = Math.max(0, Math.min(a, rest));
+    $(others[0]).value = a;
+    $(others[1]).value = rest - a;
+    paint();
+  }
+  for (const id of ids) $(id).addEventListener('input', () => { rebalance(id); onInput && onInput(); });
+  return { paint };
+}
+const mainTrio = makeTrio(
+  ['holdPct', 'minePct', 'buybackPct'],
+  ['holdVal', 'mineVal', 'buybackVal'],
+  ['bar1', 'bar2', 'bar3'],
+  () => { formDirty = true; }
+);
+
+function fillForm(cfg) {
+  $('holdPct').value = cfg.holdPct; $('minePct').value = cfg.minePct; $('buybackPct').value = cfg.buybackPct;
+  mainTrio.paint();
+  $('holdWallet').value = cfg.holdWalletAddress || '';
+  $('minClaim').value = cfg.minClaimEth; $('maxMine').value = cfg.maxMinePerRoundEth;
+  $('interval').value = cfg.intervalSeconds;
+  $('rpcUrl').value = cfg.rpcUrl || '';
+  $('allocAuto').checked = cfg.allocationMode !== 'fixed';
+  updateAllocEnabled();
+  $('buybackSmart').checked = cfg.buybackMode === 'smart';
+  $('buyDip').value = cfg.buybackDipPct; $('buyLookback').value = cfg.buybackLookbackMin;
+  $('buyMaxCycle').value = cfg.maxBuybackPerCycleEth; $('buyMaxWait').value = cfg.buybackMaxWaitHours;
+  $('buyMaxImpact').value = cfg.maxBuybackPriceImpactPct; $('buyMinInterval').value = cfg.buybackMinIntervalMin;
+  $('maxEthPerBuy').value = cfg.maxEthPerBuy; $('maxBuysPerDay').value = cfg.maxBuysPerDay; $('maxDailySpendEth').value = cfg.maxDailySpendEth;
+  updateBuybackEnabled();
+  formStrategy = cfg.miningStrategy || '';
+  $('evGate').checked = cfg.mineOnlyWhenProfitable; $('restake').checked = cfg.restakeMinedSlvr;
+  $('minEdge').value = cfg.minEdgePct; $('maxPot').value = cfg.maxPotEth;
+  $('minSeconds').value = cfg.minSecondsLeft; $('cashOut').checked = cfg.valueSlvrAsCashOut;
+  setPace(cfg.minePace || 'balanced');
+  updateStrategyEnabled();
+}
+
+function setPace(pace) {
+  $('minePace').value = pace;
+  for (const b of document.querySelectorAll('#pacePicker .pchip')) b.classList.toggle('active', b.dataset.pace === pace);
+}
+for (const b of document.querySelectorAll('#pacePicker .pchip')) {
+  b.onclick = () => { setPace(b.dataset.pace); formDirty = true; };
+}
+
+function updateAllocEnabled() {
+  const auto = $('allocAuto').checked;
+  for (const id of ['minePct', 'buybackPct']) {
+    $(id).disabled = auto;
+    $(id).closest('.sliderrow').style.opacity = auto ? '.45' : '';
+  }
+}
+$('allocAuto').addEventListener('input', updateAllocEnabled);
+
+function updateBuybackEnabled() {
+  const on = $('buybackSmart').checked;
+  $('buybackFields').style.opacity = on ? '' : '.4';
+  for (const id of ['buyDip', 'buyLookback', 'buyMaxCycle', 'buyMaxWait', 'buyMaxImpact', 'buyMinInterval']) $(id).disabled = !on;
+}
+$('buybackSmart').addEventListener('input', updateBuybackEnabled);
+
+function updateStrategyEnabled() {
+  const on = $('evGate').checked;
+  $('minEdge').disabled = !on;
+  $('minEdge').closest('div').style.opacity = on ? '' : '.4';
+  $('cashOut').disabled = !on;
+  $('cashOut').closest('.checkline').style.opacity = on ? '' : '.4';
+}
+
+/* ── settings modal + its tabs ── */
+const S_TABS = 3;
+function setSTab(i) {
+  const slider = $('sTabSlider');
+  slider.style.width = `calc((100% - 8px - ${(S_TABS - 1) * 4}px) / ${S_TABS})`;
+  slider.style.transform = `translateX(calc(${i} * (100% + 4px)))`;
+  slider.style.backgroundPosition = `${(i * 37 + 25) % 100}% ${(i * 61 + 20) % 100}%`;
+  document.querySelectorAll('[data-stab]').forEach((b) => b.classList.toggle('active', Number(b.dataset.stab) === i));
+  for (let p = 0; p < S_TABS; p++) $('sPane' + p).classList.toggle('hidden', p !== i);
+}
+document.querySelectorAll('[data-stab]').forEach((b) => { b.onclick = () => setSTab(Number(b.dataset.stab)); });
+$('btnSettings').onclick = () => {
+  if (lastState) fillForm(lastState.config);
+  formDirty = false;
+  setSTab(0);
+  $('settingsModal').classList.add('open');
+};
+$('btnSettingsClose').onclick = () => $('settingsModal').classList.remove('open');
+
+// Risk presets — fetch once. Clicking a preset APPLIES it immediately (saves
+// the whole bundle to config), merged over the current config so untouched
+// fields keep their values. The form then shows the new values and you can
+// still tweak any individual setting and Save again.
+fetch('/api/presets').then((r) => r.json()).then((p) => { PRESETS = p; }).catch(() => {});
+function highlightPreset(name) {
+  for (const c of document.querySelectorAll('#presetChips .chip')) c.classList.toggle('active', c.dataset.preset === name);
+}
+async function applyPresetToForm(name) {
+  if (!PRESETS || !PRESETS[name]) { toast('Presets not loaded yet — try again in a moment', false); return; }
+  try {
+    await api('/api/config', { ...PRESETS[name] });   // apply + persist now
+    const merged = { ...(lastState ? lastState.config : {}), ...PRESETS[name] };
+    fillForm(merged);            // reflect it in the open form (also sets formStrategy)
+    formDirty = false;
+    highlightPreset(name);
+    toast(`${name[0].toUpperCase() + name.slice(1)} preset applied — you can still tweak and Save.`);
+    refresh();
+  } catch (e) { toast(e.message, false); }
+}
+for (const b of document.querySelectorAll('#presetChips .chip')) {
+  b.onclick = () => applyPresetToForm(b.dataset.preset);
+}
+
+$('btnSaveCfg').onclick = async () => {
+  const tokenId = selectedToken || (lastState && lastState.config.tokenId) || '';
+  try {
+    await api('/api/config', {
+      tokenId,
+      holdPct: Number($('holdPct').value), minePct: Number($('minePct').value), buybackPct: Number($('buybackPct').value),
+      holdWalletAddress: $('holdWallet').value.trim(),
+      minClaimEth: Number($('minClaim').value), maxMinePerRoundEth: Number($('maxMine').value),
+      intervalSeconds: Number($('interval').value),
+      rpcUrl: $('rpcUrl').value.trim(),
+      buybackMode: $('buybackSmart').checked ? 'smart' : 'instant',
+      allocationMode: $('allocAuto').checked ? 'auto' : 'fixed',
+      buybackDipPct: Number($('buyDip').value), buybackLookbackMin: Number($('buyLookback').value),
+      maxBuybackPriceImpactPct: Number($('buyMaxImpact').value), buybackMinIntervalMin: Number($('buyMinInterval').value),
+      maxBuybackPerCycleEth: Number($('buyMaxCycle').value), buybackMaxWaitHours: Number($('buyMaxWait').value),
+      maxEthPerBuy: Number($('maxEthPerBuy').value), maxBuysPerDay: Number($('maxBuysPerDay').value), maxDailySpendEth: Number($('maxDailySpendEth').value),
+      mineOnlyWhenProfitable: $('evGate').checked, restakeMinedSlvr: $('restake').checked,
+      miningStrategy: formStrategy,
+      minEdgePct: Number($('minEdge').value), maxPotEth: Number($('maxPot').value),
+      minSecondsLeft: Number($('minSeconds').value), valueSlvrAsCashOut: $('cashOut').checked,
+      minePace: $('minePace').value,
+    });
+    formDirty = false;
+    $('settingsModal').classList.remove('open');
+    toast('Settings saved');
+    refresh();
+  } catch (e) { toast(e.message, false); }
+};
+
+/* ── onboarding (11 educational steps) ── */
+const ob = { mode: 'create', address: null, privateKey: null, preset: 'conservative', verified: false, allocated: false, step: 1 };
+const OB_STEPS = 11;
+const OB_CAPTIONS = {
+  1: 'Welcome', 2: 'How it earns', 3: 'Wallet', 4: 'Password & backup', 5: 'Risk preset',
+  6: 'Spend limits', 7: 'Fund', 8: 'Put it to work', 9: 'Rehearsal', 10: 'Go-live preview', 11: 'Done',
+};
+// Build the segmented progress bar once.
+(() => {
+  const d = $('obDots');
+  for (let i = 1; i <= OB_STEPS; i++) { const el = document.createElement('i'); el.id = 'obDot' + i; d.appendChild(el); }
+})();
+function obShow(step) {
+  for (let i = 1; i <= OB_STEPS; i++) {
+    const s = $('obStep' + i); if (s) s.classList.toggle('hidden', i !== step);
+    const dot = $('obDot' + i); if (dot) dot.classList.toggle('done', i <= step);
+  }
+  $('obStepCaption').textContent = `Step ${step} of ${OB_STEPS} · ${OB_CAPTIONS[step] || ''}`;
+  ob.step = step;
+}
+function obOpen(step) { $('ob').classList.add('open'); obShow(step); }
+function obClose() { $('ob').classList.remove('open'); }
+for (const b of document.querySelectorAll('[data-obback]')) b.onclick = () => obShow(Number(b.dataset.obback));
+
+// -- step 1: welcome --
+$('obNext1').onclick = () => obShow(2);
+
+// -- step 2: education + required acknowledgement --
+$('obAckLock').addEventListener('input', () => { $('obNext2edu').disabled = !$('obAckLock').checked; });
+$('obNext2edu').onclick = () => obShow(3);
+
+// -- step 3: wallet choice --
+$('obChooseCreate').onclick = () => {
+  ob.mode = 'create';
+  $('obStep4Title').textContent = 'Protect it with a password';
+  $('obImportKeyWrap').classList.add('hidden');
+  obShow(4);
+};
+$('obChooseImport').onclick = () => {
+  ob.mode = 'import';
+  $('obStep4Title').textContent = 'Your key + a password';
+  $('obImportKeyWrap').classList.remove('hidden');
+  obShow(4);
+};
+$('obChooseRestore').onclick = () => $('obRestoreFile').click();
+$('obRestoreFile').addEventListener('change', async () => {
+  const file = $('obRestoreFile').files[0];
+  if (!file) return;
+  try {
+    const contents = await file.text();
+    const r = await api('/api/wallet/restore', { contents });
+    toast(`Wallet restored — ${r.address.slice(0, 10)}…`);
+    obClose();
+    refresh();
+  } catch (e) { toast(e.message, false); }
+  $('obRestoreFile').value = '';
+});
+
+// -- step 4 phase A: password → create/import → reveal backup phase --
+let obBusy = false; // guard against double-submit racing two wallet creations
+async function obCreateOrImport(password) {
+  if (obBusy) return;
+  obBusy = true;
+  $('obNext2').disabled = true; $('obSkipPw').disabled = true;
+  try {
+    await obCreateOrImportInner(password);
+  } finally {
+    obBusy = false;
+    $('obNext2').disabled = false; $('obSkipPw').disabled = false;
+  }
+}
+async function obCreateOrImportInner(password) {
+  if (ob.mode === 'import') {
+    const key = $('obImportKey').value.trim();
+    if (!key) throw new Error('Paste the private key first.');
+    const r = await api('/api/wallet/import', { privateKey: key, password });
+    ob.address = r.address;
+    ob.privateKey = key.startsWith('0x') ? key : '0x' + key;
+    $('obImportKey').value = '';
+  } else {
+    const r = await api('/api/wallet/generate', { password });
+    ob.address = r.address;
+    ob.privateKey = r.privateKey;
+  }
+  $('obPassword').value = ''; $('obPassword2').value = '';
+  $('obAddr').textContent = ob.address;
+  $('obKeyBox').classList.add('hidden');
+  $('obKeyBox').textContent = '';
+  ob.verified = false;
+  $('obNext3').disabled = true;
+  $('obVerifyResult').textContent = '';
+  $('obPwPhase').classList.add('hidden');
+  $('obBackupPhase').classList.remove('hidden');
+}
+$('obNext2').onclick = async () => {
+  const p1 = $('obPassword').value, p2 = $('obPassword2').value;
+  if (!p1) return toast('Enter a password, or use "Skip password".', false);
+  if (p1 !== p2) return toast('The passwords do not match.', false);
+  try { await obCreateOrImport(p1); } catch (e) { toast(e.message, false); }
+};
+$('obSkipPw').onclick = async () => {
+  const ok = await uiConfirm({
+    title: 'Skip the password?',
+    body: 'The key will be stored <b style="color:var(--fg)">unencrypted</b> on this computer — anyone who can read this folder controls the wallet. You can add a password later by re-importing.',
+    okLabel: 'Store without password',
+    danger: true,
+  });
+  if (!ok) return;
+  try { await obCreateOrImport(''); } catch (e) { toast(e.message, false); }
+};
+
+// -- step 4 phase B: back it up + VERIFY the download --
+$('obDownload').onclick = () => { window.location.href = '/api/wallet/export'; };
+$('obShowKey').onclick = () => {
+  const box = $('obKeyBox');
+  if (box.classList.contains('hidden')) {
+    box.textContent = ob.privateKey || '(unavailable)';
+    box.classList.remove('hidden');
+    $('obShowKey').textContent = 'Hide private key';
+  } else {
+    box.textContent = '';
+    box.classList.add('hidden');
+    $('obShowKey').textContent = 'Show private key';
+  }
+};
+$('obVerifyBtn').onclick = () => $('obVerifyFile').click();
+$('obVerifyFile').addEventListener('change', async () => {
+  const file = $('obVerifyFile').files[0];
+  if (!file) return;
+  try {
+    const j = JSON.parse(await file.text());
+    const addr = String(j.address || '').toLowerCase();
+    if (addr && ob.address && addr === ob.address.toLowerCase()) {
+      ob.verified = true;
+      $('obNext3').disabled = false;
+      $('obVerifyResult').innerHTML = '<span style="color:var(--metal)">✓ Backup verified — it matches your wallet. Store it somewhere safe.</span>';
+    } else {
+      ob.verified = false;
+      $('obNext3').disabled = true;
+      $('obVerifyResult').innerHTML = '<span style="color:var(--danger)">That file doesn\'t match this wallet — re-download and try again.</span>';
+    }
+  } catch {
+    ob.verified = false;
+    $('obNext3').disabled = true;
+    $('obVerifyResult').innerHTML = '<span style="color:var(--danger)">Could not read that file as a recovery file.</span>';
+  }
+  $('obVerifyFile').value = '';
+});
+$('obNext3').onclick = () => {
+  ob.privateKey = null; // done with it — drop from page memory
+  $('obFundAddr').textContent = ob.address || (lastState && lastState.wallet && lastState.wallet.address) || '';
+  obRenderPresets();
+  obShow(5);
+};
+
+// -- step 5: pick a risk preset (Conservative pre-selected) --
+const OB_PRESET_ORDER = ['conservative', 'neutral', 'aggressive'];
+const OB_PRESET_LABEL = { conservative: 'Conservative', neutral: 'Neutral', aggressive: 'Aggressive' };
+const OB_PRESET_ICON = { conservative: '🛡️', neutral: '⚖️', aggressive: '🚀' };
+const OB_PRESET_TAG = {
+  conservative: 'Safest — smallest, slowest, most reversible',
+  neutral: 'Balanced — equal thirds',
+  aggressive: 'Reinvests hardest — still capped every day',
+};
+function obPresetSummary(p) {
+  return `Split ${p.holdPct}/${p.minePct}/${p.buybackPct} · ≤ ${p.maxEthPerBuy} ETH/buy · ≤ ${p.maxDailySpendEth} ETH/day`;
+}
+function obRenderPresets() {
+  const box = $('obPresetCards');
+  if (!box) return;
+  box.innerHTML = '';
+  for (const name of OB_PRESET_ORDER) {
+    const p = (PRESETS && PRESETS[name]) || null;
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.className = 'choice' + (ob.preset === name ? ' obsel' : '');
+    b.innerHTML = `<span class="ico">${OB_PRESET_ICON[name]}</span><span><span class="t">${OB_PRESET_LABEL[name]}</span><br><span class="d">${OB_PRESET_TAG[name]}${p ? '<br>' + obPresetSummary(p) : ''}</span></span>`;
+    b.onclick = () => { ob.preset = name; obRenderPresets(); };
+    box.appendChild(b);
+  }
+}
+$('obNext5').onclick = () => {
+  const p = (PRESETS && PRESETS[ob.preset]) || {};
+  $('obMaxEthPerBuy').value = p.maxEthPerBuy ?? 0.05;
+  $('obMaxBuysPerDay').value = p.maxBuysPerDay ?? 12;
+  $('obMaxDailySpend').value = p.maxDailySpendEth ?? 0.25;
+  $('obMaxMine').value = p.maxMinePerRoundEth ?? 0.05;
+  obShow(6);
+};
+
+// -- step 6: spend limits → save the full preset + edited limits --
+$('obNext6').onclick = async () => {
+  if (!PRESETS) { try { PRESETS = await (await fetch('/api/presets')).json(); } catch {} }
+  const p = (PRESETS && PRESETS[ob.preset]) || {};
+  try {
+    await api('/api/config', {
+      ...p,
+      tokenId: '',
+      maxEthPerBuy: Number($('obMaxEthPerBuy').value),
+      maxBuysPerDay: Number($('obMaxBuysPerDay').value),
+      maxDailySpendEth: Number($('obMaxDailySpend').value),
+      maxMinePerRoundEth: Number($('obMaxMine').value),
+    });
+    toast('Settings saved — your limits are now active.');
+    obShow(7);
+  } catch (e) { toast(e.message, false); }
+};
+
+// -- step 7: fund (reuses the browser-wallet helpers) --
+$('obCopyAddr').onclick = async () => {
+  await navigator.clipboard.writeText($('obFundAddr').textContent);
+  toast('Address copied.');
+};
+$('obConnect').onclick = async () => {
+  try {
+    await walletConnect();
+    $('obFundFrom').textContent = fundAccount;
+    $('obFundConnect').classList.add('hidden');
+    $('obFundSend').classList.remove('hidden');
+  } catch (e) { toast(e.message || 'Wallet connection was rejected.', false); }
+};
+$('obSendEth').onclick = () => sendEthFrom('obEthAmt', $('obFundAddr').textContent);
+$('obSendSlvr').onclick = () => sendSlvrFrom('obSlvrAmt', $('obFundAddr').textContent);
+$('obSkipFund').onclick = () => obShow(8);
+$('obNext7').onclick = () => obShow(8);
+
+// -- step 8: put it to work — explicit Buy & Lock only, with impact shown --
+function obSpendableEth() {
+  if (!lastState || !lastState.wallet) return 0;
+  const bal = BigInt(lastState.wallet.ethWei), res = BigInt(lastState.lowGasWei || '0');
+  const sp = bal > res ? bal - res : 0n;
+  return Number(fmt(sp.toString(), 6));
+}
+$('obAllocMax').onclick = () => { $('obAllocAmt').value = obSpendableEth(); obAllocEstimate(); };
+let obEstTimer = null;
+function obAllocEstimate() {
+  clearTimeout(obEstTimer);
+  const v = Number($('obAllocAmt').value);
+  const box = $('obAllocEstimate');
+  if (!v || v <= 0) { box.textContent = ''; return; }
+  box.innerHTML = '<span class="dim">estimating…</span>';
+  obEstTimer = setTimeout(async () => {
+    try {
+      const r = await (await fetch('/api/estimate-buy?eth=' + encodeURIComponent(v))).json();
+      if (r.error) { box.innerHTML = `<span style="color:var(--danger)">${esc(r.error)}</span>`; return; }
+      box.innerHTML = `≈ <b style="color:var(--fg)">${fmt(r.expectedSlvrWei, 2)} SLVR</b> · price impact ~${Number(r.impactPct).toFixed(2)}%`;
+    } catch { box.textContent = ''; }
+  }, 350);
+}
+$('obAllocAmt').addEventListener('input', obAllocEstimate);
+$('obAllocBuy').onclick = async () => {
+  const v = Number($('obAllocAmt').value);
+  if (!v || v <= 0) return toast('Enter an amount to buy & lock.', false);
+  const live = !!(lastState && lastState.config && lastState.config.live);
+  const ok = await uiConfirm(live ? {
+    title: `Buy & lock ${v} ETH?`,
+    body: 'This buys SLVR and <b style="color:var(--fg)">permanently max-locks it</b> into your position. It cannot be undone or withdrawn.',
+    okLabel: 'Buy & lock',
+    danger: true,
+  } : {
+    title: `Simulate buy & lock ${v} ETH?`,
+    body: "You're in <b style=\"color:var(--fg)\">dry-run</b> — this simulates only and sends nothing. You'll create the real position after switching to LIVE on the dashboard.",
+    okLabel: 'Simulate',
+  });
+  if (!ok) return;
+  try {
+    const r = await api('/api/buy-lock', { amountEth: String(v) });
+    if (r.dryRun) {
+      toast(`🧪 Dry-run — nothing sent. Would lock ~${fmt(r.slvrLockedWei, 2)} SLVR.`);
+      $('obAllocEstimate').innerHTML = `<span style="color:var(--metal)">✓ Simulated — would lock ~${fmt(r.slvrLockedWei, 2)} SLVR. Do it for real after going LIVE.</span>`;
+      $('obNext8').classList.remove('hidden');
+    } else {
+      ob.allocated = true;
+      toast('Bought and locked into veNFT #' + r.tokenId);
+      $('obAllocBuy').classList.add('hidden');
+      $('obSkipAlloc').classList.add('hidden');
+      $('obNext8').classList.remove('hidden');
+      $('obAllocEstimate').innerHTML = '<span style="color:var(--metal)">✓ Position created. Continue when ready.</span>';
+    }
+    refresh();
+  } catch (e) { toast(e.message, false); }
+};
+$('obSkipAlloc').onclick = () => obShow(9);
+$('obNext8').onclick = () => obShow(9);
+
+// -- step 9: dry-run rehearsal --
+$('obRehearse').onclick = async () => {
+  try {
+    await api('/api/run-once', {});
+    $('obRehearseResult').innerHTML = '<span style="color:var(--metal)">✓ Dry-run cycle started — the decisions appear in the dashboard activity feed.</span>';
+  } catch (e) { toast(e.message, false); }
+};
+$('obNext9').onclick = () => { obRenderLivePreview(); obShow(10); };
+
+// -- step 10: personalized go-live preview --
+function obRenderLivePreview() {
+  const p = (PRESETS && PRESETS[ob.preset]) || {};
+  const hold = p.holdPct ?? 10, mine = p.minePct ?? 45, buy = p.buybackPct ?? 45;
+  $('obLivePreview').innerHTML =
+    '<div style="font-weight:600; margin-bottom:6px">Each cycle, from your <span style="color:var(--fg)">claimed rewards only</span>:</div>' +
+    '<div class="row"><span class="k">Keep for gas</span><span class="v">~0.002 ETH reserve</span></div>' +
+    `<div class="row"><span class="k">Hold</span><span class="v">${hold}%${hold > 0 ? ' → kept as ETH' : ''}</span></div>` +
+    `<div class="row"><span class="k">Mine</span><span class="v">${mine}% → grid bets (paced, capped)</span></div>` +
+    `<div class="row"><span class="k">Buy &amp; lock</span><span class="v">${buy}% → SLVR, permanent</span></div>` +
+    `<div class="help" style="margin-top:8px">Never more than ${p.maxEthPerBuy ?? 0.05} ETH per buy or ${p.maxDailySpendEth ?? 0.25} ETH per day. Your deposit stays put.</div>`;
+}
+$('obNext10').onclick = () => obShow(11);
+
+// -- step 11: finish --
+$('obFinish').onclick = () => {
+  obClose();
+  toast("Setup complete — you're in dry-run. Flip LIVE from the dashboard when you're ready.");
+  refresh();
+};
+
+/* ── render ── */
+function render(s) {
+  lastState = s;
+  // first visit with nothing earned yet: the price chart is the useful one
+  if (!seriesAutoPicked) {
+    seriesAutoPicked = true;
+    const pos0 = s.positions.find((p) => p.tokenId === (s.config.tokenId || '')) || s.positions[0];
+    const pending0 = pos0 ? Number(fmt(pos0.pendingEthWei, 12)) : 0;
+    if (pending0 === 0 && chartSeries === 'pending') {
+      chartSeries = 'price';
+      syncSeriesChips();
+      loadSeries();
+    }
+  }
+  const live = s.config.live;
+  $('modeDry').classList.toggle('active', !live);
+  $('modeLive').classList.toggle('active', live);
+  $('runBadge').textContent = s.running ? (s.busy ? 'running · cycle in progress' : 'running') : 'stopped';
+  $('runBadge').className = 'pill' + (s.running ? ' on' : '');
+  $('btnStart').classList.toggle('hidden', s.running);
+  $('btnStop').classList.toggle('hidden', !s.running);
+
+  const obOpenNow = $('ob').classList.contains('open');
+  if (!s.hasKey && !obOpenNow) obOpen(1);
+  if (s.hasKey && s.configured && obOpenNow && $('obStep1').offsetParent !== null) obClose();
+
+  const isLocked = s.hasKey && s.locked;
+  $('lockStatePill').classList.toggle('hidden', !isLocked);
+  if (isLocked && !unlockPrompted) {
+    unlockPrompted = true;
+    $('unlockModal').classList.add('open');
+  }
+  if (!isLocked) {
+    unlockPrompted = false;
+    $('unlockModal').classList.remove('open'); // never prompt when nothing is locked
+  }
+  $('lockPill').innerHTML = s.hasKey
+    ? (s.encrypted
+        ? (s.locked ? '<span class="pill bad">locked</span>' : '<span class="pill on">password-protected</span>')
+        : '<span class="pill">no password</span>')
+    : '';
+
+  if (s.wallet) {
+    $('walletAddr').textContent = s.wallet.address;
+    $('walletEth').textContent = fmt(s.wallet.ethWei);
+    $('walletSlvr').textContent = fmt(s.wallet.slvrWei, 4);
+    const low = s.hasKey && BigInt(s.wallet.ethWei) < BigInt(s.lowGasWei);
+    $('gasPill').classList.toggle('hidden', !low);
+    $('walletEth').style.color = low ? 'var(--danger)' : '';
+    $('ethPlan').innerHTML = ethPlanMarkup(s);
+
+    const funded = BigInt(s.wallet.ethWei) > 0n;
+    $('obFundBal').innerHTML =
+      `${fmt(s.wallet.ethWei, 5)} ETH · ${fmt(s.wallet.slvrWei, 2)} SLVR` +
+      (funded ? ' <span style="color:var(--metal)">✓ funded</span>' : '');
+    $('obFundBal').style.color = funded ? '' : 'var(--w32)';
+    const spWei = BigInt(s.wallet.ethWei) > BigInt(s.lowGasWei || '0') ? BigInt(s.wallet.ethWei) - BigInt(s.lowGasWei || '0') : 0n;
+    if ($('obAllocBal')) $('obAllocBal').textContent = `${fmt(spWei.toString(), 5)} ETH`;
+  } else {
+    $('gasPill').classList.add('hidden');
+  }
+
+  $('slvrPrice').textContent = s.price
+    ? (s.price.usd != null ? `$${Number(s.price.usd).toFixed(2)}` : `${Number(s.price.eth).toFixed(6)} ETH`)
+    : '—';
+
+  updateLive(s);
+
+  // custom position dropdown
+  if (!selectedToken && s.config.tokenId) selectedToken = s.config.tokenId;
+  if (selectedToken && !s.positions.some((p) => p.tokenId === selectedToken)) {
+    // stale selection (e.g. new wallet) — fall back
+    selectedToken = s.positions[0] ? s.positions[0].tokenId : '';
+  }
+  ddPaint(s);
+  const pos = s.positions.find((p) => p.tokenId === (selectedToken || s.config.tokenId));
+  if (pos) {
+    $('posLocked').textContent = fmt(pos.lockedSlvrWei, 4) + ' SLVR';
+    $('posStatus').innerHTML = pos.expired
+      ? '<span class="danger-text">lock EXPIRED</span>'
+      : pos.staked ? '<span>staked · earning</span>' : '<span class="muted">not staked</span>';
+    $('posPending').textContent = fmt(pos.pendingEthWei) + ' ETH';
+    $('posWarn').classList.toggle('hidden', !pos.expired);
+    if (pos.expired) $('posWarn').textContent = 'This lock has expired — use "Max-lock" below to re-lock so it keeps earning.';
+  } else if (s.hasKey && s.positions.length === 0) {
+    $('posLocked').textContent = '—';
+    $('posStatus').innerHTML = '<span class="muted">no veNFT yet</span>';
+    $('posPending').textContent = '—';
+  }
+
+  const m = s.metrics;
+  $('mClaimed').textContent = fmt(m.totalClaimedEthWei) + ' ETH';
+  $('mHeld').textContent = fmt(m.totalHeldEthWei) + ' ETH';
+  $('mBought').textContent = `${fmt(m.totalSlvrBoughtWei, 4)} / ${fmt(m.totalSlvrLockedWei, 4)} SLVR`;
+  $('mMined').textContent = fmt(m.totalSlvrMinedWei, 4) + ' SLVR';
+  $('mMine').textContent = `${fmt(m.totalMineSpentEthWei)} / ${fmt(m.totalMineWinningsEthWei)} ETH`;
+  $('mCounts').textContent = `· ${m.claimCount} claims · ${m.mineRoundCount} rounds`;
+
+  if (s.dataDir) {
+    $('storageLine').textContent = s.dataDir;
+    $('storageProfile').textContent = s.profile && s.profile !== 'default' ? ` (profile: ${s.profile})` : '';
+  }
+
+  // settings form only refreshes while the modal is closed (don't fight the user)
+  if (!formLoaded || (!$('settingsModal').classList.contains('open') && !formDirty)) {
+    fillForm(s.config);
+    formLoaded = true;
+  }
+
+  // mining strategy picker: chips + per-strategy explanation and params
+  if (s.miningStrategies && s.miningStrategies.length > 2) {
+    $('stratRow').classList.remove('hidden');
+    const box = $('stratChips');
+    const meta = s.miningStrategyMeta || {};
+    const selected = s.config.miningStrategy || '';
+    const STRAT_LABELS = { 'ev-gated': 'EV-gated', 'always': 'Always mine', 'opportunistic': 'Opportunistic' };
+    const sig = s.miningStrategies.join() + '|' + selected;
+    if (box._sig !== sig) {
+      box._sig = sig;
+      box.innerHTML = '';
+      const mk = (key, label, desc) => {
+        const b = document.createElement('button');
+        b.type = 'button';
+        b.className = 'chip' + (selected === key ? ' active' : '');
+        b.textContent = label;
+        if (desc) b.title = desc;
+        b.onclick = async () => {
+          try { formStrategy = key; await api('/api/config', { miningStrategy: key }); toast(`Mining strategy: ${label}`); box._sig = ''; refresh(); }
+          catch (e) { toast(e.message, false); }
+        };
+        box.appendChild(b);
+      };
+      mk('', 'Auto (use the switch)', 'Uses EV-gated or Always mine based on the "only when profitable" switch.');
+      for (const k of s.miningStrategies) mk(k, STRAT_LABELS[k] || k, meta[k] && meta[k].description);
+      // description + params for the active strategy (Auto resolves to ev-gated/always)
+      const activeKey = selected || (s.config.mineOnlyWhenProfitable ? 'ev-gated' : 'always');
+      const m = meta[activeKey];
+      $('stratDesc').textContent = m ? m.description : '';
+      const pbox = $('stratParams');
+      pbox.innerHTML = '';
+      const params = (m && m.params) || [];
+      const unitLabel = { pct: '%', eth: 'ETH', hours: 'h', x: '×', '': '' };
+      for (const p of params) {
+        const cur = (s.config.strategyParams && s.config.strategyParams[p.key] != null) ? s.config.strategyParams[p.key] : p.default;
+        const field = document.createElement('div');
+        field.className = 'field';
+        field.innerHTML = `<label style="margin-top:0">${esc(p.label)}${p.unit ? ' <span class="dim">('+unitLabel[p.unit]+')</span>' : ''}</label>`;
+        const input = document.createElement('input');
+        input.type = 'number'; input.min = p.min; input.max = p.max; input.step = p.step; input.value = cur;
+        input.onchange = async () => {
+          let v = Number(input.value);
+          if (!Number.isFinite(v)) return;
+          v = Math.max(p.min, Math.min(p.max, v));
+          input.value = v;
+          try { await api('/api/config', { strategyParams: { [p.key]: v } }); toast(`Saved ${p.label}`); }
+          catch (e) { toast(e.message, false); }
+        };
+        field.appendChild(input);
+        const hint = document.createElement('div'); hint.className = 'hint'; hint.textContent = p.hint;
+        field.appendChild(hint);
+        pbox.appendChild(field);
+      }
+    }
+  } else {
+    $('stratRow').classList.add('hidden');
+  }
+
+  const log = $('log');
+  const atBottom = log.scrollTop + log.clientHeight >= log.scrollHeight - 8;
+  log.textContent = (s.log && s.log.length) ? s.log.join('\n') : 'automation not started yet';
+  if (atBottom) log.scrollTop = log.scrollHeight;
+
+  const rows = s.events.map((e) => {
+    const when = new Date(e.ts * 1000).toLocaleString();
+    const eth = e.ethWei !== '0' ? fmt(e.ethWei) : '';
+    const slvr = e.slvrWei !== '0' ? fmt(e.slvrWei, 4) : '';
+    const tx = e.txHash ? `<span class="mono dim">${esc(e.txHash.slice(0, 12))}…</span>` : '';
+    const label = EVENT_LABELS[e.type] || esc(e.type);
+    const detail = e.detail ? ` <span class="dim">${esc(e.detail)}</span>` : '';
+    return `<tr><td>${when}</td><td style="color:var(--fg)">${label}${detail}</td><td class="v">${eth}</td><td class="v">${slvr}</td><td>${tx}</td></tr>`;
+  });
+  $('eventRows').innerHTML = rows.length ? rows.join('') : '<tr><td colspan="5">no activity yet</td></tr>';
+
+}
+
+/* ═══ DASHBOARD METRICS — customize here ═══
+   The stats line under the live station is generated from this list. Add,
+   remove, or reorder entries freely; each is { label, value(ctx) } where ctx
+   has the latest server state (ctx.s), the computed break-even (ctx.breakEven),
+   and helpers (fmt, fnum, usdStr). Return null to hide an entry. */
+const NETROW_METRICS = [
+  { label: 'SLVR price', value: (ctx) => ctx.s.price && ctx.s.price.usd != null ? `$${Number(ctx.s.price.usd).toFixed(2)}` : null },
+  { label: 'emission', value: (ctx) => ctx.s.network ? `${fnum(Number(fmt(ctx.s.network.slvrPerRoundWei, 4)), 2)} SLVR/round` : null },
+  { label: 'mining budget', value: (ctx) => `${fmt(ctx.s.mineBudgetWei)} ETH` },
+  { label: 'buyback budget', value: (ctx) => `${fmt(ctx.s.buybackBudgetWei ?? '0')} ETH` },
+  // Unsettled rounds only matter when there are some — hidden otherwise.
+  { label: 'unsettled rounds', value: (ctx) => ctx.s.openMineRounds.length ? ctx.s.openMineRounds.map((r) => '#' + r).join(', ') : null },
+  // Examples — bring back a hidden metric by uncommenting it:
+  // { label: 'break-even pot', value: (ctx) => ctx.breakEven > 0 ? `${fnum(ctx.breakEven, 3)} ETH` : null },
+  // { label: 'total staked weight', value: (ctx) => ctx.s.network ? fmt(ctx.s.network.totalWeightWei, 0) : null },
+];
+/* The wallet ETH plan line: what each slice of the balance is reserved for
+   and the mining runway, so a deposit never looks like it vanished or idles
+   mysteriously. Mining/buyback budgets come only from CLAIMED rewards; the
+   rest of your wallet ETH is principal (yours, never auto-spent) plus gas. */
+function ethPlanMarkup(s) {
+  if (!s.wallet || !s.hasKey) return '';
+  const eth = BigInt(s.wallet.ethWei);
+  if (eth === 0n) return '';
+  const mine = BigInt(s.mineBudgetWei || '0');
+  const buy = BigInt(s.buybackBudgetWei || '0');
+  const hold = BigInt(s.holdKeptWei || '0');
+  const reserve = BigInt(s.gasReserveWei || '0');
+  const used = mine + buy + hold + reserve;
+  const spare = eth > used ? eth - used : 0n;
+  const parts = [];
+  if (mine > 0n) {
+    const p = s.minePlan;
+    if (p && p.blockedByCap) {
+      parts.push(`mining ${fmt(mine, 4)} waiting: raise Max ETH per round in Settings (a gas-efficient bet needs ${fmt(p.minStakeWei, 4)})`);
+    } else if (p) {
+      const every = p.spacingSec >= 5400 ? `~${(p.spacingSec / 3600).toFixed(1)}h` : `~${Math.max(1, Math.round(p.spacingSec / 60))}m`;
+      const runwayH = (p.spacingSec * p.roundsAffordable) / 3600;
+      const runway = runwayH >= 48 ? `~${Math.round(runwayH / 24)}d` : `~${Math.max(1, Math.round(runwayH))}h`;
+      parts.push(`mining ${fmt(mine, 4)} · bets of ${fmt(p.stakeWei, 4)} every ${every} · runway ${runway}`);
+    } else {
+      parts.push(`mining ${fmt(mine, 4)}`);
+    }
+  }
+  if (buy > 0n) parts.push(`buybacks ${fmt(buy, 4)} (waiting)`);
+  if (hold > 0n) parts.push(`hold ${fmt(hold, 4)} (held)`);
+  if (spare >= 10n ** 14n) {
+    parts.push(`${fmt(spare, 4)} yours (Buy & Lock to stake it)`);
+  }
+  parts.push(`gas reserve ${fmt(reserve, 4)}`);
+  return parts.map(esc).join(' <span style="opacity:.45">·</span> ');
+}
+
+function renderNetrow(ctx) {
+  $('netrow').innerHTML = NETROW_METRICS
+    .map((m) => ({ label: m.label, v: m.value(ctx) }))
+    .filter((m) => m.v != null)
+    .map((m) => `<span>${esc(m.label)} <b>${esc(m.v)}</b></span>`)
+    .join('');
+}
+
+/* ═══ the live numbers engine ═══
+   Targets come from each poll; a 100ms ticker eases the displayed values
+   toward them, and integrates the measured earning rate so "unclaimed
+   rewards" visibly counts up between polls. */
+const live = {
+  pending: { shown: 0, target: 0 },   // ETH
+  pot: { shown: 0, target: 0 },       // ETH
+  cut: { shown: 0, target: 0 },       // ETH
+  ratePerSec: 0,                      // ETH/s measured from snapshots
+  ethUsd: null,
+  secondsLeft: 0,
+  roundDurGuess: 60,
+  lastTick: performance.now(),
+};
+
+const fnum = (x, dp = 6) => (Number.isFinite(x) ? x.toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: dp }) : '—');
+const usdStr = (eth) => (live.ethUsd != null && Number.isFinite(eth) ? `$${(eth * live.ethUsd).toLocaleString('en-US', { maximumFractionDigits: 2 })}` : null);
+
+/** ETH/second earned, from the recent slope of pending rewards (resets on claims). */
+function computeRate(snaps) {
+  if (!snaps || snaps.length < 3) return 0;
+  const pts = snaps.slice(-60).map((x) => ({ t: x.ts, v: Number(fmt(x.pendingEthWei, 12)) }));
+  let start = 0;
+  for (let i = 1; i < pts.length; i++) if (pts[i].v < pts[i - 1].v - 1e-12) start = i; // claim happened — restart the window
+  const seg = pts.slice(start);
+  if (seg.length < 3) return 0;
+  const n = seg.length;
+  const mt = seg.reduce((a, p) => a + p.t, 0) / n;
+  const mv = seg.reduce((a, p) => a + p.v, 0) / n;
+  let cov = 0, varT = 0;
+  for (const p of seg) { cov += (p.t - mt) * (p.v - mv); varT += (p.t - mt) ** 2; }
+  if (varT === 0) return 0;
+  return Math.max(cov / varT, 0);
+}
+
+function updateLive(s) {
+  live.ethUsd = s.price && s.price.usd != null && s.price.eth ? s.price.usd / s.price.eth : null;
+
+  const pos = s.positions.find((p) => p.tokenId === (selectedToken || s.config.tokenId));
+  const pending = pos ? Number(fmt(pos.pendingEthWei, 12)) : 0;
+  live.pending.target = pending;
+  live.ratePerSec = computeRate(s.snapshots);
+
+  // earning rate + projections
+  const perDay = live.ratePerSec * 86400;
+  if (live.ratePerSec > 0) {
+    $('hRate').textContent = usdStr(perDay) ? `${usdStr(perDay)}/day` : `${fnum(perDay, 6)} ETH/day`;
+    $('hRateSub').textContent = usdStr(perDay) ? `${fnum(perDay, 6)} ETH per day` : 'per day, measured live';
+    const perMonth = perDay * 30;
+    $('hProj').textContent = usdStr(perMonth) ?? `${fnum(perMonth, 4)} ETH`;
+    $('hProjSub').textContent = `per month · ${usdStr(perDay * 365) ?? fnum(perDay * 365, 4) + ' ETH'} per year`;
+  } else {
+    $('hRate').textContent = '—';
+    $('hRateSub').textContent = s.snapshots.length < 3 ? 'measuring — a few readings needed' : 'no rewards accruing yet';
+    $('hProj').textContent = '—';
+    $('hProjSub').textContent = 'per month, at the current rate';
+  }
+
+  // pool share + your cut of the live pot
+  const net = s.network;
+  let share = 0;
+  if (net && pos && Number(net.totalWeightWei) > 0) {
+    share = Number(pos.stakedWeightWei) / Number(net.totalWeightWei);
+    $('hShare').textContent = `${(share * 100).toLocaleString('en-US', { maximumFractionDigits: 3 })}%`;
+    $('hShareSub').textContent = `your weight ${fmt(pos.stakedWeightWei, 2)} of ${fmt(net.totalWeightWei, 0)}`;
+  } else {
+    $('hShare').textContent = '—';
+    $('hShareSub').textContent = pos ? 'stake your veNFT to earn' : 'no position yet';
+  }
+
+  // live round
+  if (s.round && net) {
+    const potEth = Number(fmt(s.round.potWei, 12));
+    live.pot.target = potEth;
+    $('rId').textContent = '#' + s.round.id;
+    live.secondsLeft = s.round.secondsLeft;
+    if (s.round.secondsLeft > live.roundDurGuess) live.roundDurGuess = s.round.secondsLeft;
+    $('rStatus').textContent = s.round.open
+      ? (s.round.secondsLeft > 0 ? 'betting open' : 'betting closing…')
+      : 'resolving — rewards distribute next';
+
+    // stakers' share of the pot: stakerFeeBps is bps OF the protocol fee;
+    // fall back to (protocolFee − jackpotFee) when unset.
+    const feeFrac = net.protocolFeeBps / 10000;
+    const stakerFrac = net.stakerFeeBps > 0
+      ? feeFrac * (net.stakerFeeBps / 10000)
+      : Math.max((net.protocolFeeBps - net.jackpotFeeBps) / 10000, 0);
+    $('rStakerPct').textContent = `${(stakerFrac * 100).toFixed(1)}%`;
+    live.cut.target = potEth * stakerFrac * share;
+
+    // mining signal: pot vs break-even (hold valuation, jackpot ignored)
+    const priceEth = s.price ? Number(s.price.eth) : 0;
+    const emission = Number(fmt(net.slvrPerRoundWei, 6));
+    const breakEven = feeFrac > 0 && priceEth > 0 ? (emission * priceEth) / feeFrac : 0;
+    if (breakEven > 0) {
+      const good = potEth < breakEven;
+      $('rMine').textContent = good ? 'favorable' : 'unfavorable';
+      $('rMine').className = 'bignum display ' + (good ? 'signal-good' : 'signal-bad');
+      $('rMineSub').textContent = good
+        ? `below break-even (${fnum(breakEven, 3)} ETH)`
+        : `above break-even (${fnum(breakEven, 3)} ETH)`;
+      $('rMineSub').style.cursor = 'help';
+      $('rMineSub').title = `Break-even pot: the pot size where mining stops paying. Below it, the SLVR you'd mine this round is worth more than the ~${(feeFrac*100).toFixed(0)}% protocol fee you pay to enter, so mining is +EV. Above it, you'd expect to lose ETH. It rises with the SLVR price and falls as the pot grows.`;
+    } else {
+      $('rMine').textContent = '—';
+      $('rMineSub').textContent = 'waiting for price data';
+      $('rMineSub').title = '';
+    }
+
+    renderNetrow({ s, breakEven });
+  }
+}
+
+/* the 100ms ticker: ease toward targets, integrate the earning rate, count the round down */
+setInterval(() => {
+  const now = performance.now();
+  const dt = (now - live.lastTick) / 1000;
+  live.lastTick = now;
+
+  // pending counts up on its own between polls — that's the fun part
+  live.pending.target += live.ratePerSec * dt;
+  for (const key of ['pending', 'pot', 'cut']) {
+    const o = live[key];
+    o.shown += (o.target - o.shown) * Math.min(1, dt * 4);
+  }
+
+  $('hPending').textContent = `${fnum(live.pending.shown, 7)} ETH`;
+  $('hPendingSub').textContent = usdStr(live.pending.shown)
+    ? `${usdStr(live.pending.shown)} · accruing every round`
+    : 'accruing every round';
+  $('rPot').textContent = `${fnum(live.pot.shown, 4)} ETH`;
+  $('rPotSub').textContent = usdStr(live.pot.shown)
+    ? `${usdStr(live.pot.shown)} wagered this round`
+    : 'wagered by miners this round';
+  $('rCut').textContent = `${fnum(live.cut.shown, 7)} ETH`;
+  const cutUsd = live.ethUsd != null ? live.cut.shown * live.ethUsd : null;
+  $('rCut').title = cutUsd != null ? `≈ $${cutUsd.toLocaleString('en-US', { maximumFractionDigits: cutUsd < 0.01 ? 6 : 2 })} at the current ETH price` : '';
+
+  if (live.secondsLeft > 0) live.secondsLeft = Math.max(0, live.secondsLeft - dt);
+  $('rBar').style.width = `${Math.min(100, (live.secondsLeft / live.roundDurGuess) * 100)}%`;
+  if (lastState && lastState.round && lastState.round.open && live.secondsLeft > 0) {
+    $('rStatus').textContent = `betting open · ${Math.ceil(live.secondsLeft)}s left`;
+  }
+}, 100);
+
+/* ═══ the live chart: switchable series × switchable time range ═══
+   Data comes from /api/series — the LIVE range is a seconds-resolution
+   in-memory buffer on the server; 1H/1D/1W are SQLite-bucketed history. */
+const isLight = () => document.documentElement.classList.contains('light');
+const chartColors = () => isLight()
+  ? { grid: 'rgba(0,0,0,.07)', line: '#4c5760', dot: '#22272c', label: '#16181b', foot: 'rgba(22,26,30,.4)', areaTop: 'rgba(60,72,82,.16)', hover: 'rgba(0,0,0,.28)', halo: '#f8f9fa' }
+  : { grid: 'rgba(255,255,255,.05)', line: '#c1c7c9', dot: '#eef1f3', label: '#fff', foot: 'rgba(255,255,255,.25)', areaTop: 'rgba(193,199,201,.22)', hover: 'rgba(255,255,255,.22)', halo: '#0d0d0d' };
+
+let chartSeries = localStorage.getItem('chartSeries') || 'pending';
+let seriesAutoPicked = !!localStorage.getItem('chartSeries');
+let chartRange = 'live';
+let seriesPoints = [];
+const SERIES = {
+  pending: { title: 'Rewards accruing', unit: 'ETH', dp: 6, foot: 'unclaimed ETH rewards (resets when claimed)' },
+  earned:  { title: 'Total earned', unit: 'ETH', dp: 6, foot: 'cumulative ETH earned (claimed + pending)' },
+  price:   { title: 'SLVR price', unit: 'USD', dp: 2, foot: 'SLVR price' },
+  balance: { title: 'Wallet ETH', unit: 'ETH', dp: 5, foot: 'auto-staker wallet ETH' },
+  locked: { title: 'Locked SLVR', unit: 'SLVR', dp: 2, foot: 'SLVR locked in your position' },
+};
+const RANGE_FOOT = { live: 'past hour · live', '1d': 'past day · 10min avg' };
+
+let hoverIdx = -1;
+(() => {
+  const svg = $('chart');
+  const W = 800, L = 6, R = 6;
+  svg.addEventListener('mousemove', (e) => {
+    const n = chartVals.length;
+    if (n < 2) return;
+    const rect = svg.getBoundingClientRect();
+    const x = ((e.clientX - rect.left) / rect.width) * W;
+    const idx = Math.round(((x - L) / (W - L - R)) * (n - 1));
+    const next = Math.max(0, Math.min(n - 1, idx));
+    if (next !== hoverIdx) { hoverIdx = next; drawChart(); }
+  });
+  svg.addEventListener('mouseleave', () => { hoverIdx = -1; drawChart(); });
+})();
+
+async function loadSeries() {
+  try {
+    const r = await fetch(`/api/series?series=${chartSeries}&range=${chartRange}`);
+    if (!r.ok) return;
+    seriesPoints = (await r.json()).points;
+    drawChart();
+  } catch { /* transient — keep the old line */ }
+}
+/* series chips — "Rewards" opens a current/cumulative submenu, since both are
+   views of the same thing: current = unclaimed (resets on each claim),
+   cumulative = total earned over time (only ever rises). */
+const isRewardsSeries = (s) => s === 'pending' || s === 'earned';
+let rewardMode = localStorage.getItem('rewardMode') || 'current';
+
+function syncSeriesChips() {
+  document.querySelectorAll('[data-series]').forEach((x) => {
+    const on = x.dataset.group === 'rewards' ? isRewardsSeries(chartSeries) : x.dataset.series === chartSeries;
+    x.classList.toggle('active', on);
+  });
+  $('rewardSub').style.visibility = isRewardsSeries(chartSeries) ? 'visible' : 'hidden';
+  const mode = chartSeries === 'earned' ? 'cumulative' : 'current';
+  document.querySelectorAll('[data-rewardmode]').forEach((x) => x.classList.toggle('active', x.dataset.rewardmode === mode));
+}
+document.querySelectorAll('[data-series]').forEach((b) => {
+  b.onclick = () => {
+    chartSeries = b.dataset.group === 'rewards'
+      ? (rewardMode === 'cumulative' ? 'earned' : 'pending')
+      : b.dataset.series;
+    localStorage.setItem('chartSeries', chartSeries);
+    seriesAutoPicked = true;
+    syncSeriesChips();
+    loadSeries();
+  };
+});
+document.querySelectorAll('[data-rewardmode]').forEach((b) => {
+  b.onclick = () => {
+    rewardMode = b.dataset.rewardmode;
+    localStorage.setItem('rewardMode', rewardMode);
+    chartSeries = rewardMode === 'cumulative' ? 'earned' : 'pending';
+    localStorage.setItem('chartSeries', chartSeries);
+    seriesAutoPicked = true;
+    syncSeriesChips();
+    loadSeries();
+  };
+});
+syncSeriesChips();
+
+document.querySelectorAll('[data-range]').forEach((b) => {
+  b.onclick = () => {
+    chartRange = b.dataset.range;
+    document.querySelectorAll('[data-range]').forEach((x) => x.classList.toggle('active', x === b));
+    loadSeries();
+  };
+});
+
+let chartVals = [];
+let chartTimes = [];
+function drawChart() {
+  const svg = $('chart');
+  const spec = SERIES[chartSeries];
+  // price arrives as ETH-per-SLVR — show USD when we know ETH/USD
+  const toDisplay = chartSeries === 'price'
+    ? (v) => (live.ethUsd != null ? v * live.ethUsd : v)
+    : (v) => v;
+  const kept = seriesPoints.filter((p) => p.v != null && Number.isFinite(toDisplay(p.v)));
+  const usable = kept.map((p) => toDisplay(p.v));
+  chartTimes = kept.map((p) => p.t);
+  // live tip: the rewards line creeps between readings using the measured rate
+  if (chartSeries === 'pending' && chartRange === 'live' && usable.length >= 2 && live.pending.shown > 0) {
+    usable.push(Math.max(live.pending.shown, usable[usable.length - 1]));
+    chartTimes.push(Math.floor(Date.now() / 1000));
+  }
+  chartVals = usable;
+  if (usable.length < 2) {
+    svg.innerHTML = `<text x="400" y="128" text-anchor="middle" fill="${chartColors().foot}" font-size="12">Loading chart data…</text>`;
+    return;
+  }
+  const W = 800, H = 250, TOP = 18, BOT = 14, L = 6, R = 6;
+  const vals = usable;
+  const rawMax = Math.max(...vals);
+  const rawMin = Math.min(...vals);
+  let span = rawMax - rawMin;
+  // pad the domain so lines never hug the edges; flat non-zero series draw
+  // mid-chart instead of looking broken on the floor
+  const pad = span > 0 ? span * 0.12 : Math.max(Math.abs(rawMax) * 0.02, 1e-9);
+  let min = rawMin - pad, max = rawMax + pad;
+  // every series here is non-negative — never invent space below zero, and a
+  // zero baseline (e.g. rewards before the first claim) sits at the bottom
+  if (rawMin >= 0 && min < 0) min = 0;
+  if (rawMax === 0) { min = 0; max = 1; }
+  span = max - min;
+  const X = (i) => L + (i / (vals.length - 1)) * (W - L - R);
+  const Y = (v) => H - BOT - ((v - min) / span) * (H - TOP - BOT);
+
+  const pts = vals.map((v, i) => `${X(i).toFixed(1)},${Y(v).toFixed(1)}`);
+  const line = pts.join(' ');
+  const area = `${L},${H - BOT} ${line} ${X(vals.length - 1).toFixed(1)},${H - BOT}`;
+
+  const C = chartColors();
+  // three faint horizontal grid lines
+  let grid = '';
+  for (let g = 1; g <= 3; g++) {
+    const y = TOP + ((H - TOP - BOT) / 4) * g;
+    grid += `<line x1="${L}" y1="${y}" x2="${W - R}" y2="${y}" stroke="${C.grid}" stroke-width="1"/>`;
+  }
+
+  const lastX = X(vals.length - 1), lastY = Y(vals[vals.length - 1]);
+  const lastVal = vals[vals.length - 1];
+  const unit = chartSeries === 'price' && live.ethUsd == null ? 'ETH' : spec.unit;
+  const lastLabel = unit === 'USD' ? `$${lastVal.toFixed(spec.dp)}` : `${lastVal.toPrecision(4)} ${unit}`;
+  const labelAnchor = lastX > W - 130 ? 'end' : 'start';
+  const labelDx = lastX > W - 130 ? -10 : 10;
+
+  svg.innerHTML =
+    `<defs><linearGradient id="chartGrad" x1="0" y1="0" x2="0" y2="1">
+       <stop offset="0%" stop-color="${C.areaTop}"/>
+       <stop offset="100%" stop-color="${C.areaTop.replace(/[\d.]+\)$/, '0)')}"/>
+     </linearGradient></defs>` +
+    grid +
+    `<polygon points="${area}" fill="url(#chartGrad)"/>` +
+    `<polyline points="${line}" fill="none" stroke="${C.line}" stroke-width="1.8" stroke-linejoin="round"/>` +
+    `<circle cx="${lastX}" cy="${lastY}" r="3.2" fill="${C.dot}"><animate attributeName="opacity" values="1;.35;1" dur="2s" repeatCount="indefinite"/></circle>` +
+    `<text x="${lastX + labelDx}" y="${Math.max(lastY - 8, 12)}" text-anchor="${labelAnchor}" fill="${C.label}" font-size="12" font-weight="600">${lastLabel}</text>` +
+    `<text x="${W - R}" y="${H - 3}" text-anchor="end" fill="${C.foot}" font-size="9">${spec.foot} · ${RANGE_FOOT[chartRange]}</text>` +
+    hoverMarkup(vals, X, Y, unit, spec, W, TOP, H, BOT);
+}
+
+/* the hover crosshair: vertical line + dot + value/time label at the nearest point */
+function hoverMarkup(vals, X, Y, unit, spec, W, TOP, H, BOT) {
+  if (hoverIdx < 0 || hoverIdx >= vals.length) return '';
+  const hx = X(hoverIdx), hy = Y(vals[hoverIdx]);
+  const val = unit === 'USD' ? `$${vals[hoverIdx].toFixed(spec.dp)}` : `${vals[hoverIdx].toPrecision(4)} ${unit}`;
+  const ts = chartTimes[hoverIdx];
+  const when = ts
+    ? new Date(ts * 1000).toLocaleTimeString([], chartRange === '1d' ? { hour: '2-digit', minute: '2-digit' } : { hour: '2-digit', minute: '2-digit', second: '2-digit' })
+    : '';
+  const label = when ? `${val} · ${when}` : val;
+  const anchor = hx > W - 150 ? 'end' : (hx < 150 ? 'start' : 'middle');
+  const C = chartColors();
+  return (
+    `<line x1="${hx}" y1="${TOP - 4}" x2="${hx}" y2="${H - BOT}" stroke="${C.hover}" stroke-width="1"/>` +
+    `<circle cx="${hx}" cy="${hy}" r="3.4" fill="${C.label}"/>` +
+    `<text x="${hx}" y="${Math.max(TOP + 6, hy - 12)}" text-anchor="${anchor}" fill="${C.label}" font-size="12" font-weight="700" paint-order="stroke" stroke="${C.halo}" stroke-width="4">${label}</text>`
+  );
+}
+
+async function refresh() {
+  try { render(await api('/api/state')); }
+  catch (e) { console.warn('state refresh failed (will retry):', e.message); }
+}
+
+/* ── mode switch ── */
+$('modeDry').onclick = async () => {
+  if (!lastState || !lastState.config.live) return;
+  try { await api('/api/config', { live: false }); toast('Switched to DRY RUN — nothing will be sent.'); refresh(); }
+  catch (e) { toast(e.message, false); }
+};
+$('modeLive').onclick = async () => {
+  if (!lastState || lastState.config.live) return;
+  const c = lastState.config;
+  const alloc = c.allocationMode === 'auto'
+    ? `hold ${c.holdPct}%, then route the rest to mining or buy &amp; lock automatically`
+    : `hold ${c.holdPct}% · mine ${c.minePct}% · buy &amp; lock ${c.buybackPct}%`;
+  const ok = await uiConfirm({
+    title: 'Go LIVE?',
+    body:
+      'The app will start sending <b style="color:var(--fg)">real transactions with real ETH</b>. From here on, each cycle — <b style="color:var(--fg)">using your claimed rewards only</b> (your deposit stays put) — will:' +
+      `<br>• split each claim: ${alloc}` +
+      `<br>• buy &amp; lock is <b style="color:var(--fg)">permanent</b> (SLVR burned into your position)` +
+      `<br>• never spend more than <b style="color:var(--fg)">${c.maxEthPerBuy} ETH</b> per buy or <b style="color:var(--fg)">${c.maxDailySpendEth} ETH</b> per day` +
+      '<br><br>Anything already staked via Buy &amp; Lock stays as-is.',
+    okLabel: 'Go LIVE',
+    danger: true,
+  });
+  if (!ok) return;
+  try { await api('/api/config', { live: true }); toast('LIVE mode on.'); refresh(); }
+  catch (e) { toast(e.message, false); }
+};
+
+/* ── form dirty tracking ── */
+for (const id of ['holdWallet', 'minClaim', 'maxMine', 'interval', 'rpcUrl', 'evGate', 'restake',
+                  'minEdge', 'maxPot', 'minSeconds', 'cashOut',
+                  'buybackSmart', 'buyDip', 'buyLookback', 'buyMaxCycle', 'buyMaxWait', 'buyMaxImpact', 'buyMinInterval', 'allocAuto',
+                  'maxEthPerBuy', 'maxBuysPerDay', 'maxDailySpendEth']) {
+  $(id).addEventListener('input', () => { formDirty = true; });
+}
+$('evGate').addEventListener('input', updateStrategyEnabled);
+
+/* ── custom position dropdown ── */
+let selectedToken = '';
+function ddPaint(s) {
+  const label = (() => {
+    if (s.positions.length === 0) return 'no position yet — lock SLVR to create one';
+    const p = s.positions.find((x) => x.tokenId === selectedToken) || s.positions[0];
+    const kind = p.permanent ? 'permanent' : p.isMaxTime ? 'max lock' : 'timed lock';
+    return `veNFT #${p.tokenId} · ${fmt(p.lockedSlvrWei, 2)} SLVR · ${kind}`;
+  })();
+  $('ddLabel').textContent = label;
+
+  const inner = $('ddInner');
+  inner.innerHTML = '';
+  if (s.positions.length === 0) {
+    const d = document.createElement('div');
+    d.className = 'ddopt';
+    d.style.cursor = 'default';
+    d.textContent = 'nothing here yet';
+    inner.appendChild(d);
+    return;
+  }
+  for (const p of s.positions) {
+    const b = document.createElement('button');
+    b.type = 'button';
+    const kind = p.permanent ? 'permanent' : p.isMaxTime ? 'max lock' : 'timed lock';
+    const isSel = p.tokenId === (selectedToken || s.config.tokenId);
+    b.className = 'ddopt' + (isSel ? ' sel' : '');
+    b.innerHTML = `<span class="tick">${isSel ? '✓' : ''}</span><span>veNFT #${p.tokenId} · ${fmt(p.lockedSlvrWei, 2)} SLVR · ${kind}${p.tokenId === s.permanentLockTokenId ? ' ★' : ''}</span>`;
+    b.onclick = async () => {
+      selectedToken = p.tokenId;
+      ddClose();
+      ddPaint(lastState);
+      try { await api('/api/config', { tokenId: p.tokenId }); toast('Managed veNFT updated'); refresh(); }
+      catch (e) { toast(e.message, false); }
+    };
+    inner.appendChild(b);
+  }
+}
+function ddClose() { $('ddList').classList.add('hidden'); $('ddBtn').classList.remove('open'); }
+$('ddBtn').onclick = (e) => {
+  e.stopPropagation();
+  const open = $('ddList').classList.contains('hidden');
+  $('ddList').classList.toggle('hidden', !open);
+  $('ddBtn').classList.toggle('open', open);
+};
+document.addEventListener('click', (e) => { if (!$('tokenDD').contains(e.target)) ddClose(); });
+
+/* ── history page ── */
+$('btnHistory').onclick = () => $('historyModal').classList.add('open');
+$('btnHistoryClose').onclick = () => $('historyModal').classList.remove('open');
+
+/* ── lock modal ── */
+$('btnLockOpen').onclick = () => {
+  if (!lastState || !lastState.hasKey) return toast('Set up the wallet first.', false);
+  $('lockAvail').textContent = lastState.wallet ? `${fmt(lastState.wallet.slvrWei, 4)} SLVR` : '—';
+  $('lockModal').classList.add('open');
+};
+$('btnLockClose').onclick = () => $('lockModal').classList.remove('open');
+
+/* ── buy & lock (ETH → buy SLVR → max-lock into the veNFT) ── */
+function buyLockSpendableWei() {
+  if (!lastState || !lastState.wallet) return 0n;
+  const eth = BigInt(lastState.wallet.ethWei);
+  const reserve = BigInt(lastState.gasReserveWei || '0');
+  return eth > reserve ? eth - reserve : 0n;
+}
+function renderBuyLockEst() {
+  const amt = Number($('buyLockAmount').value);
+  const price = lastState && lastState.price ? lastState.price.eth : null;
+  if (!amt || amt <= 0 || !price) { $('buyLockEst').textContent = ''; return; }
+  const slvr = (amt / price) * 0.98; // approx, accounts for the buy tax
+  $('buyLockEst').textContent = `≈ ${slvr.toFixed(4)} SLVR locked`;
+}
+$('btnBuyLockOpen').onclick = () => {
+  if (!lastState || !lastState.hasKey) return toast('Set up the wallet first.', false);
+  if (lastState.locked) return toast('Unlock the wallet first.', false);
+  $('buyLockAvail').textContent = `${fmt(buyLockSpendableWei(), 5)} ETH`;
+  $('buyLockAmount').value = ''; $('buyLockAmount')._all = false;
+  $('buyLockEst').textContent = '';
+  $('buyLockMsg').textContent = (lastState.config && !lastState.config.live)
+    ? '🧪 Dry-run: this only simulates — switch to LIVE to actually buy & lock.' : '';
+  $('buyLockModal').classList.add('open');
+};
+$('btnBuyLockClose').onclick = () => $('buyLockModal').classList.remove('open');
+$('btnBuyLockAll').onclick = () => {
+  $('buyLockAmount').value = fmt(buyLockSpendableWei(), 6);
+  $('buyLockAmount')._all = true;
+  renderBuyLockEst();
+};
+$('buyLockAmount').addEventListener('input', () => { $('buyLockAmount')._all = false; renderBuyLockEst(); });
+$('btnBuyLockDo').onclick = async () => {
+  const amt = $('buyLockAmount')._all ? 'all' : $('buyLockAmount').value;
+  if (!$('buyLockAmount')._all && (!amt || Number(amt) <= 0)) return toast('Enter an ETH amount.', false);
+  const live = !!(lastState && lastState.config && lastState.config.live);
+  const ok = await uiConfirm(live ? {
+    title: `Buy SLVR with ${$('buyLockAmount').value || 'all spendable'} ETH and permanently lock it?`,
+    body: 'This buys SLVR on the market and burns it into your position. It cannot be undone or withdrawn.',
+    okLabel: 'Buy & Lock forever',
+    danger: true,
+  } : {
+    title: 'Simulate Buy & Lock?',
+    body: "You're in <b style=\"color:var(--fg)\">dry-run</b> — this only simulates and sends nothing on-chain. Switch to LIVE to actually buy & lock.",
+    okLabel: 'Simulate',
+  });
+  if (!ok) return;
+  $('btnBuyLockDo').disabled = true;
+  $('buyLockMsg').textContent = live ? 'Buying and locking…' : 'Simulating…';
+  try {
+    const r = await api('/api/buy-lock', { amountEth: amt });
+    $('buyLockModal').classList.remove('open');
+    toast(r.dryRun
+      ? `🧪 Dry-run — nothing sent. Would lock ~${fmt(r.slvrLockedWei, 4)} SLVR. Switch to LIVE to execute.`
+      : `✅ Locked ${fmt(r.slvrLockedWei, 4)} SLVR into veNFT #${r.tokenId}`);
+    refresh();
+  } catch (e) {
+    $('buyLockMsg').textContent = e.message || 'Failed.';
+    toast(e.message || 'Buy & Lock failed.', false);
+  } finally { $('btnBuyLockDo').disabled = false; }
+};
+
+$('btnStart').onclick = async () => { try { await api('/api/start', {}); toast('Automation started'); refresh(); } catch (e) { toast(e.message, false); } };
+$('btnStop').onclick = async () => { try { await api('/api/stop', {}); toast('Automation stopped'); refresh(); } catch (e) { toast(e.message, false); } };
+$('btnOnce').onclick = async () => { try { await api('/api/run-once', {}); toast('Running one cycle…'); } catch (e) { toast(e.message, false); } };
+
+/* ── unlock (modal — no layout shift) ── */
+let unlockPrompted = false;
+$('lockStatePill').onclick = () => $('unlockModal').classList.add('open');
+$('btnUnlockLater').onclick = () => $('unlockModal').classList.remove('open');
+$('gasPill').onclick = () => openFund();
+$('btnUnlock').onclick = async () => {
+  try {
+    await api('/api/wallet/unlock', { password: $('unlockPassword').value });
+    $('unlockPassword').value = '';
+    $('unlockModal').classList.remove('open');
+    toast('Wallet unlocked for this session.');
+    refresh();
+  } catch (e) { toast(e.message, false); }
+};
+$('unlockPassword').addEventListener('keydown', (e) => { if (e.key === 'Enter') $('btnUnlock').click(); });
+
+/* ── back up / recovery ── */
+function showKeyModal(address, privateKey) {
+  $('keyModalAddr').textContent = address;
+  $('keyModalKey').textContent = privateKey;
+  $('keyModal').classList.add('open');
+}
+$('btnCopyKey').onclick = async () => {
+  await navigator.clipboard.writeText($('keyModalKey').textContent);
+  toast('Key copied — paste it somewhere safe, then clear your clipboard.');
+};
+$('btnKeyDone').onclick = () => {
+  $('keyModalKey').textContent = '';
+  $('keyModal').classList.remove('open');
+};
+$('btnBackup').onclick = () => {
+  if (!lastState || !lastState.hasKey) return toast('No wallet yet.', false);
+  $('backupModal').classList.add('open');
+};
+$('btnBackupClose').onclick = () => $('backupModal').classList.remove('open');
+$('btnBkFile').onclick = () => {
+  $('backupModal').classList.remove('open');
+  window.location.href = '/api/wallet/export';
+};
+$('btnBkKey').onclick = () => {
+  $('backupModal').classList.remove('open');
+  revealFlow();
+};
+async function revealFlow() {
+  if (!lastState || !lastState.hasKey) return toast('No wallet yet.', false);
+  if (lastState.encrypted) {
+    $('revealPassword').value = '';
+    $('revealModal').classList.add('open');
+  } else {
+    const ok = await uiConfirm({
+      title: 'Show the private key?',
+      body: 'The key will appear on screen — make sure nobody is watching or recording.',
+      okLabel: 'Show it',
+    });
+    if (!ok) return;
+    api('/api/wallet/reveal', {})
+      .then((r) => showKeyModal(lastState.wallet.address, r.privateKey))
+      .catch((e) => toast(e.message, false));
+  }
+}
+$('btnRevealCancel').onclick = () => $('revealModal').classList.remove('open');
+$('btnRevealGo').onclick = async () => {
+  try {
+    const r = await api('/api/wallet/reveal', { password: $('revealPassword').value });
+    $('revealModal').classList.remove('open');
+    showKeyModal(lastState.wallet.address, r.privateKey);
+  } catch (e) { toast(e.message, false); }
+};
+
+/* ── max-lock ── */
+$('btnLockAll').onclick = () => {
+  if (lastState && lastState.wallet) $('lockAmount').value = fmt(lastState.wallet.slvrWei, 6);
+  $('lockAmount')._all = true;
+};
+$('lockAmount').addEventListener('input', () => { $('lockAmount')._all = false; });
+$('btnMaxLock').onclick = async () => {
+  const amt = $('lockAmount')._all ? 'all' : $('lockAmount').value;
+  if (!amt) return toast('Enter a SLVR amount first.', false);
+  const live = !!(lastState && lastState.config && lastState.config.live);
+  const ok = await uiConfirm(live ? {
+    title: `Permanently max-lock ${$('lockAmount').value} SLVR?`,
+    body: 'The SLVR is <b style="color:var(--fg)">burned into your permanent position</b> — it earns ETH forever at the highest weight and can <b style="color:var(--fg)">never be withdrawn</b>.',
+    okLabel: 'Burn & lock forever',
+    danger: true,
+  } : {
+    title: 'Simulate max-lock?',
+    body: "You're in <b style=\"color:var(--fg)\">dry-run</b> — this only simulates and sends nothing on-chain. Switch to LIVE to actually lock.",
+    okLabel: 'Simulate',
+  });
+  if (!ok) return;
+  $('btnMaxLock').disabled = true;
+  $('lockMsg').textContent = live ? 'sending transaction…' : 'simulating…';
+  try {
+    const r = await api('/api/max-lock', { amountSlvr: amt });
+    $('lockMsg').textContent = '';
+    $('lockAmount').value = '';
+    $('lockModal').classList.remove('open');
+    toast(r.dryRun
+      ? '🧪 Dry-run — nothing sent. Switch to LIVE to actually lock.'
+      : `Locked into veNFT #${r.tokenId} — it is now earning ETH.`);
+    refresh();
+  } catch (e) {
+    $('lockMsg').textContent = '';
+    toast(e.message, false);
+  } finally { $('btnMaxLock').disabled = false; }
+};
+
+/* ── FUND flow (browser wallet via EIP-1193) ── */
+const CHAIN_HEX = '0x1237'; // 4663 — Robinhood Chain
+let fundAccount = null;
+
+function openFund() {
+  if (!lastState || !lastState.wallet) return toast('Set up the wallet first.', false);
+  $('fundAddr').textContent = lastState.wallet.address;
+  $('fundModal').classList.add('open');
+}
+$('btnFund').onclick = openFund;
+$('btnFundClose').onclick = () => $('fundModal').classList.remove('open');
+$('btnCopyAddr').onclick = async () => {
+  await navigator.clipboard.writeText($('fundAddr').textContent);
+  toast('Address copied.');
+};
+
+async function ensureChain() {
+  try {
+    await window.ethereum.request({ method: 'wallet_switchEthereumChain', params: [{ chainId: CHAIN_HEX }] });
+  } catch (e) {
+    if (e && (e.code === 4902 || (e.data && e.data.originalError && e.data.originalError.code === 4902))) {
+      await window.ethereum.request({
+        method: 'wallet_addEthereumChain',
+        params: [{
+          chainId: CHAIN_HEX,
+          chainName: 'Robinhood Chain',
+          nativeCurrency: { name: 'Ether', symbol: 'ETH', decimals: 18 },
+          rpcUrls: ['https://rpc.mainnet.chain.robinhood.com'],
+          blockExplorerUrls: ['https://robinhoodchain.blockscout.com/'],
+        }],
+      });
+    } else throw e;
+  }
+}
+
+async function walletConnect() {
+  if (!window.ethereum) throw new Error('No browser wallet found — copy the address and send from any wallet instead.');
+  const accounts = await window.ethereum.request({ method: 'eth_requestAccounts' });
+  await ensureChain();
+  fundAccount = accounts[0];
+  return fundAccount;
+}
+
+function toWeiHex(amountStr) {
+  const [w, f = ''] = String(amountStr).split('.');
+  const frac = (f + '0'.repeat(18)).slice(0, 18);
+  return '0x' + (BigInt(w || '0') * (10n ** 18n) + BigInt(frac || '0')).toString(16);
+}
+
+/* Track a submitted transaction to its on-chain outcome: poll the server
+   (which asks Robinhood Chain directly, so it works even if the browser
+   wallet switches networks mid-flight), then report and refresh balances. */
+async function trackTx(hash, label) {
+  const deadline = Date.now() + 180000;
+  while (Date.now() < deadline) {
+    await new Promise((r) => setTimeout(r, 2500));
+    try {
+      const { status } = await (await fetch(`/api/tx?hash=${hash}`)).json();
+      if (status === 'success') {
+        toast(`✅ ${label} confirmed — balances updated.`);
+        refresh();
+        return;
+      }
+      if (status === 'failed') {
+        toast(`${label} failed on-chain (tx ${hash.slice(0, 12)}…).`, false);
+        return;
+      }
+    } catch { /* server hiccup — keep polling */ }
+  }
+  toast(`${label} is taking a while — check tx ${hash.slice(0, 12)}… on the explorer.`, false);
+}
+
+async function sendEthFrom(inputId, toAddress) {
+  const amt = $(inputId).value;
+  if (!amt || Number(amt) <= 0) return toast('Enter an ETH amount.', false);
+  try {
+    await ensureChain();
+    const hash = await window.ethereum.request({
+      method: 'eth_sendTransaction',
+      params: [{ from: fundAccount, to: toAddress, value: toWeiHex(amt) }],
+    });
+    toast(`Submitted ${amt} ETH — waiting for confirmation…`);
+    $(inputId).value = '';
+    trackTx(hash, `Deposit of ${amt} ETH`);
+  } catch (e) { toast(e.message || 'Transaction rejected.', false); }
+}
+
+async function sendSlvrFrom(inputId, toAddress) {
+  const amt = $(inputId).value;
+  if (!amt || Number(amt) <= 0) return toast('Enter a SLVR amount.', false);
+  try {
+    await ensureChain();
+    const to = toAddress.slice(2).toLowerCase().padStart(64, '0');
+    const value = BigInt(toWeiHex(amt)).toString(16).padStart(64, '0');
+    const hash = await window.ethereum.request({
+      method: 'eth_sendTransaction',
+      params: [{ from: fundAccount, to: lastState.tokenAddress, value: '0x0', data: '0xa9059cbb' + to + value }],
+    });
+    toast(`Submitted ${amt} SLVR — waiting for confirmation…`);
+    $(inputId).value = '';
+    trackTx(hash, `Deposit of ${amt} SLVR`);
+  } catch (e) { toast(e.message || 'Transaction rejected.', false); }
+}
+
+/* ── cross-chain bridging via Relay (relay.link) ──
+   Quote → execute the returned transaction(s) from the user's wallet on the
+   origin chain → poll Relay's status endpoint until the fill lands on
+   Robinhood Chain. The dashboard balance updates as soon as it arrives. */
+const RELAY_API = 'https://api.relay.link';
+const ZERO_ADDR = '0x0000000000000000000000000000000000000000';
+const BRIDGE_CHAINS = [
+  { id: 1, hex: '0x1', label: 'Ethereum', currency: ZERO_ADDR },
+  { id: 42161, hex: '0xa4b1', label: 'Arbitrum', currency: ZERO_ADDR,
+    add: { chainName: 'Arbitrum One', rpcUrls: ['https://arb1.arbitrum.io/rpc'], nativeCurrency: { name: 'Ether', symbol: 'ETH', decimals: 18 }, blockExplorerUrls: ['https://arbiscan.io'] } },
+  { id: 8453, hex: '0x2105', label: 'Base', currency: ZERO_ADDR,
+    add: { chainName: 'Base', rpcUrls: ['https://mainnet.base.org'], nativeCurrency: { name: 'Ether', symbol: 'ETH', decimals: 18 }, blockExplorerUrls: ['https://basescan.org'] } },
+  { id: 10, hex: '0xa', label: 'Optimism', currency: ZERO_ADDR,
+    add: { chainName: 'OP Mainnet', rpcUrls: ['https://mainnet.optimism.io'], nativeCurrency: { name: 'Ether', symbol: 'ETH', decimals: 18 }, blockExplorerUrls: ['https://optimistic.etherscan.io'] } },
+  { id: 137, hex: '0x89', label: 'Polygon', currency: '0x7ceb23fd6bc0add59e62ac25578270cff1b9f619',
+    add: { chainName: 'Polygon', rpcUrls: ['https://polygon-rpc.com'], nativeCurrency: { name: 'POL', symbol: 'POL', decimals: 18 }, blockExplorerUrls: ['https://polygonscan.com'] } },
+];
+let bridgeChain = BRIDGE_CHAINS[1]; // Arbitrum default — cheap and fast
+let bridgeQuoteData = null;
+
+function paintBridgeChains() {
+  const box = $('bridgeChains');
+  box.innerHTML = '';
+  for (const c of BRIDGE_CHAINS) {
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.className = 'chip' + (c.id === bridgeChain.id ? ' active' : '');
+    b.textContent = c.label;
+    b.onclick = () => { bridgeChain = c; bridgeQuoteData = null; $('bridgeQuote').classList.add('hidden'); $('bridgeExecRow').classList.add('hidden'); paintBridgeChains(); };
+    box.appendChild(b);
+  }
+}
+paintBridgeChains();
+
+async function ensureOriginChain(c) {
+  try {
+    await window.ethereum.request({ method: 'wallet_switchEthereumChain', params: [{ chainId: c.hex }] });
+  } catch (e) {
+    if (e && (e.code === 4902 || (e.data && e.data.originalError && e.data.originalError.code === 4902)) && c.add) {
+      await window.ethereum.request({ method: 'wallet_addEthereumChain', params: [{ chainId: c.hex, ...c.add }] });
+    } else throw e;
+  }
+}
+
+$('btnBridgeQuote').onclick = async () => {
+  const amt = $('bridgeAmt').value;
+  if (!amt || Number(amt) <= 0) return toast('Enter an ETH amount to bridge.', false);
+  try {
+    if (!window.ethereum) return toast('Bridging needs a browser wallet (MetaMask etc.).', false);
+    if (!fundAccount) { await walletConnect(); $('fundFrom').textContent = fundAccount; $('fundConnect').classList.add('hidden'); $('fundSend').classList.remove('hidden'); }
+    $('bridgeQuote').classList.remove('hidden');
+    $('bridgeQuote').textContent = 'Fetching quote…';
+    const res = await fetch(`${RELAY_API}/quote`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        user: fundAccount,
+        recipient: lastState.wallet.address,
+        originChainId: bridgeChain.id,
+        destinationChainId: 4663,
+        originCurrency: bridgeChain.currency,
+        destinationCurrency: ZERO_ADDR,
+        amount: BigInt(toWeiHex(amt)).toString(),
+        tradeType: 'EXACT_INPUT',
+      }),
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.message || `quote failed (${res.status})`);
+    }
+    bridgeQuoteData = await res.json();
+    const out = bridgeQuoteData.details?.currencyOut?.amount;
+    const eta = bridgeQuoteData.details?.timeEstimate;
+    $('bridgeQuote').innerHTML =
+      `Send <b>${esc(amt)} ETH</b> on ${esc(bridgeChain.label)} → receive <b>≈ ${out ? esc(fmt(out, 6)) : '?'} ETH</b> on Robinhood Chain` +
+      (eta ? ` · ~${esc(String(eta))}s` : '') + '.';
+    $('bridgeExecRow').classList.remove('hidden');
+    $('bridgeStatus').textContent = 'ready';
+  } catch (e) {
+    $('bridgeQuote').textContent = `Quote failed: ${e.message}`;
+    $('bridgeExecRow').classList.add('hidden');
+  }
+};
+
+$('btnBridgeGo').onclick = async () => {
+  if (!bridgeQuoteData) return;
+  const setStatus = (t) => { $('bridgeStatus').textContent = t; };
+  try {
+    $('btnBridgeGo').disabled = true;
+    setStatus(`switching wallet to ${bridgeChain.label}…`);
+    await ensureOriginChain(bridgeChain);
+    for (const step of bridgeQuoteData.steps ?? []) {
+      for (const item of step.items ?? []) {
+        const tx = item.data;
+        if (!tx) continue;
+        setStatus(step.description || step.id || 'sending transaction…');
+        const params = { from: fundAccount, to: tx.to, data: tx.data };
+        if (tx.value && tx.value !== '0') {
+          params.value = String(tx.value).startsWith('0x') ? tx.value : '0x' + BigInt(tx.value).toString(16);
+        }
+        await window.ethereum.request({ method: 'eth_sendTransaction', params: [params] });
+        if (item.check && item.check.endpoint) {
+          setStatus('bridging — waiting for the fill on Robinhood Chain…');
+          const deadline = Date.now() + 5 * 60 * 1000;
+          for (;;) {
+            await new Promise((x) => setTimeout(x, 3000));
+            const st = await fetch(`${RELAY_API}${item.check.endpoint}`).then((r) => r.json()).catch(() => null);
+            const status = st && (st.status || st.state);
+            if (status === 'success') break;
+            if (status === 'failure' || status === 'refund') throw new Error(`bridge ${status} — check relay.link with your tx hash`);
+            if (Date.now() > deadline) throw new Error('status timeout — the bridge may still complete; watch your balance');
+            setStatus(`bridging — ${status || 'pending'}…`);
+          }
+        }
+      }
+    }
+    setStatus('✅ bridged — the ETH is on Robinhood Chain; your balance updates in a few seconds');
+    toast('Bridge complete — funds arriving on Robinhood Chain.');
+    $('bridgeAmt').value = '';
+    bridgeQuoteData = null;
+  } catch (e) {
+    setStatus(`✗ ${e.message}`);
+    toast(e.message || 'Bridge failed or was rejected.', false);
+  } finally {
+    $('btnBridgeGo').disabled = false;
+  }
+};
+
+$('btnConnect').onclick = async () => {
+  try {
+    await walletConnect();
+    $('fundFrom').textContent = fundAccount;
+    $('fundConnect').classList.add('hidden');
+    $('fundSend').classList.remove('hidden');
+  } catch (e) { toast(e.message || 'Wallet connection was rejected.', false); }
+};
+$('btnSendEth').onclick = () => sendEthFrom('fundEthAmt', lastState.wallet.address);
+$('btnSendSlvr').onclick = () => sendSlvrFrom('fundSlvrAmt', lastState.wallet.address);
+
+/* per-button metal castings */
+$('btnSaveCfg').style.setProperty('--lm-x', '69%');
+$('btnSaveCfg').style.setProperty('--lm-y', '37%');
+$('btnMaxLock').style.setProperty('--lm-x', '46%');
+$('btnMaxLock').style.setProperty('--lm-y', '82%');
+$('btnFund').style.setProperty('--lm-x', '12%');
+$('btnFund').style.setProperty('--lm-y', '58%');
+
+/* ── light / dark mode ── */
+if (localStorage.getItem('theme') === 'light') document.documentElement.classList.add('light');
+function paintThemeBtn() { $('btnTheme').textContent = isLight() ? '🌙' : '☀'; }
+$('btnTheme').onclick = () => {
+  document.documentElement.classList.toggle('light');
+  localStorage.setItem('theme', isLight() ? 'light' : 'dark');
+  paintThemeBtn();
+  drawChart();
+};
+paintThemeBtn();
+
+/* ── display prefs (text size + contrast), saved per device ── */
+function applyDisplayPrefs() {
+  const scale = localStorage.getItem('uiScale') || '1';
+  document.documentElement.style.setProperty('--ui-scale', scale);
+  document.documentElement.classList.toggle('hicontrast', localStorage.getItem('hiContrast') === '1');
+  document.querySelectorAll('.szchip').forEach((b) => b.classList.toggle('active', b.dataset.uiscale === scale));
+  const hc = $('hiContrast'); if (hc) hc.checked = localStorage.getItem('hiContrast') === '1';
+}
+document.querySelectorAll('.szchip').forEach((b) => {
+  b.onclick = () => { localStorage.setItem('uiScale', b.dataset.uiscale); applyDisplayPrefs(); };
+});
+$('hiContrast').onchange = () => {
+  localStorage.setItem('hiContrast', $('hiContrast').checked ? '1' : '0');
+  applyDisplayPrefs();
+  drawChart();
+};
+applyDisplayPrefs();
+
+refresh();
+loadSeries();
+setInterval(refresh, 5000);
+setInterval(loadSeries, 5000);
+// keep the chart's live tip creeping between fetches
+setInterval(() => { if (seriesPoints.length) drawChart(); }, 1000);
+</script>
+</body>
+</html>

@@ -1,0 +1,16 @@
+# Your private key lives in wallet.json / .env — never commit them.
+wallet.json
+.env
+
+# Your personal settings, running state, and earnings history.
+config.json
+state.json
+data.sqlite
+data.sqlite-journal
+data.sqlite-wal
+data.sqlite-shm
+
+node_modules/
+dist/
+*.log
+.DS_Store

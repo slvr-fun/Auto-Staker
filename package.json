@@ -1,0 +1,38 @@
+{
+  "name": "slvr-auto-staker",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Self-contained automation for SLVR veNFT holders: claim staking ETH, keep some, mine some, buy SLVR and compound the rest into your lock.",
+  "license": "MIT",
+  "author": "slvr-labs",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/slvr-fun/Auto-Staker.git"
+  },
+  "homepage": "https://github.com/slvr-fun/Auto-Staker#readme",
+  "bugs": {
+    "url": "https://github.com/slvr-fun/Auto-Staker/issues"
+  },
+  "engines": {
+    "node": ">=22.13.0"
+  },
+  "scripts": {
+    "start": "tsx src/index.ts ui",
+    "status": "tsx src/index.ts status",
+    "once": "tsx src/index.ts once",
+    "check": "tsx src/index.ts check",
+    "config": "tsx src/index.ts config",
+    "typecheck": "tsc --noEmit",
+    "check:ui": "node scripts/check-ui.mjs"
+  },
+  "dependencies": {
+    "@slvr-labs/sdk": "^0.1.2",
+    "dotenv": "^16.4.5",
+    "viem": "^2.40.3"
+  },
+  "devDependencies": {
+    "@types/node": "^24.0.0",
+    "tsx": "^4.19.2",
+    "typescript": "^5.6.0"
+  }
+}
