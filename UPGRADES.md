@@ -9,6 +9,23 @@ in `package.json` to match, and keep entries additive — never rewrite old ones
 
 ---
 
+## 1.1.0 — SLVR SDK 0.2.0
+
+Moves the app onto **`@slvr-labs/sdk` 0.2.0** (from 0.1.2).
+
+**User action required:** run `npm install` after upgrading — the SDK
+dependency changed, so the lockfile must be refreshed before `npm start`.
+Your wallet, settings, and history are untouched (they live outside the repo).
+
+<!-- TODO before merge: list the actual 0.2.0 changes here — any renamed or
+     removed SDK calls, behavior changes, and anything users must reconfigure.
+     This section is what `/upgrade-autostaker` shows people before merging. -->
+
+**Conflict-prone:** `package.json` (dependency + version). If you pinned or
+customized the SDK version, keep your pin and take the rest.
+
+---
+
 ## 1.0.0 — Initial release
 
 The SLVR Auto-Staker: a local web app that automates a SLVR staking position on
