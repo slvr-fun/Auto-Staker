@@ -13,16 +13,31 @@ in `package.json` to match, and keep entries additive — never rewrite old ones
 
 Moves the app onto **`@slvr-labs/sdk` 0.2.0** (from 0.1.2).
 
-**User action required:** run `npm install` after upgrading — the SDK
-dependency changed, so the lockfile must be refreshed before `npm start`.
-Your wallet, settings, and history are untouched (they live outside the repo).
+**This is a dependency-only upgrade — no behavior changes.** SDK 0.2.0 is
+purely additive: nothing the auto-staker calls was renamed, changed, or
+removed, so your split, limits, mining, and buybacks all work exactly as
+before. No app code changed.
 
-<!-- TODO before merge: list the actual 0.2.0 changes here — any renamed or
-     removed SDK calls, behavior changes, and anything users must reconfigure.
-     This section is what `/upgrade-autostaker` shows people before merging. -->
+What 0.2.0 adds (all in the SDK's **auto-commit plan** area, which this app
+does not use — listed for completeness):
 
-**Conflict-prone:** `package.json` (dependency + version). If you pinned or
-customized the SDK version, keep your pin and take the rest.
+- `LOCK_MODE` (`none` / `permanent`) and the `LockMode` type
+- `planLockMode(user)` — reads a plan's lock mode; returns `null` on a V2
+  contract, so it doubles as a "is this the V3 generation?" probe
+- An optional trailing `lockMode` argument on `configurePlan` and
+  `configurePlanAndDeposit`
+
+**User action required:** run `npm install` after merging — the SDK version
+changed, so the lockfile must be refreshed before `npm start`. Your wallet,
+settings, and history are untouched (they live outside the repo).
+
+**Verified on 0.2.0 before release:** typecheck clean, UI check green, live
+chain/SDK connect OK, and a full dry-run cycle prices claims, mining EV, and
+buybacks correctly while sending nothing.
+
+**Conflict-prone:** `package.json` + `package-lock.json` (dependency +
+version). If you pinned or customized the SDK version, keep your pin and take
+the rest.
 
 ---
 
