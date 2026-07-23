@@ -35,7 +35,7 @@ import {
   type AppConfig,
   type PresetName,
 } from './config';
-import { readOnlyCtx, walletCtx, ADDRESSES } from './chain';
+import { readOnlyCtx, walletCtx, ADDRESSES, lotteryFor, lotteryAddressFor } from './chain';
 import { allMiningStrategies, allMiningStrategyMeta } from './strategies';
 import { getPosition, listPositions, lockExpired, maxLockSlvr } from './position';
 import { buySlvr, quoteBuy } from './swap';
@@ -514,15 +514,15 @@ export async function getState(): Promise<object> {
       listPositions(ctx, me),
       ctx.sdk.getSlvrPrice().catch(() => null),
       ctx.voteEscrow.read.getPermanentLockTokenId([me]),
-      ctx.sdk.lottery.getRound(roundId),
-      ctx.sdk.lottery.roundOpen(roundId),
-      ctx.sdk.lottery.bettingEnd(roundId),
+      lotteryFor(ctx, roundId).getRound(roundId),
+      lotteryFor(ctx, roundId).roundOpen(roundId),
+      lotteryFor(ctx, roundId).bettingEnd(roundId),
       ctx.publicClient.getBlock(),
       ctx.sdk.staking.getTotalWeight(),
-      ctx.sdk.lottery.slvrPerRound(),
-      ctx.sdk.lottery.protocolFeeBps(),
-      ctx.publicClient.readContract({ address: ADDRESSES.lottery, abi: FEE_SPLIT_ABI, functionName: 'stakerFeeBps' }).catch(() => 0),
-      ctx.publicClient.readContract({ address: ADDRESSES.lottery, abi: FEE_SPLIT_ABI, functionName: 'jackpotFeeBps' }).catch(() => 200),
+      lotteryFor(ctx, roundId).slvrPerRound(),
+      lotteryFor(ctx, roundId).protocolFeeBps(),
+      ctx.publicClient.readContract({ address: lotteryAddressFor(roundId), abi: FEE_SPLIT_ABI, functionName: 'stakerFeeBps' }).catch(() => 0),
+      ctx.publicClient.readContract({ address: lotteryAddressFor(roundId), abi: FEE_SPLIT_ABI, functionName: 'jackpotFeeBps' }).catch(() => 200),
     ]);
     const secondsLeft = Number(bettingEnd - block.timestamp);
     const plan = cfg ? await miningPlan(ctx, cfg, state, roundId).catch(() => null) : null;

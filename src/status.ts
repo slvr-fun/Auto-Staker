@@ -4,7 +4,7 @@
  */
 import { formatEther } from 'viem';
 import { hasConfig, loadConfig, loadState, UI_PORT } from './config';
-import { readOnlyCtx, walletCtx } from './chain';
+import { readOnlyCtx, walletCtx, lotteryFor } from './chain';
 import { describePosition, getPosition, lockExpired } from './position';
 import { metrics } from './db';
 
@@ -73,8 +73,8 @@ export async function showCheck(): Promise<void> {
   const ctx = readOnlyCtx();
   const roundId = await ctx.sdk.lottery.currentRoundId();
   const [open, round, price, totalWeight] = await Promise.all([
-    ctx.sdk.lottery.roundOpen(roundId),
-    ctx.sdk.lottery.getRound(roundId),
+    lotteryFor(ctx, roundId).roundOpen(roundId),
+    lotteryFor(ctx, roundId).getRound(roundId),
     ctx.sdk.getSlvrPrice().catch(() => null),
     ctx.sdk.staking.getTotalWeight(),
   ]);

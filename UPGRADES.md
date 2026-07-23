@@ -9,35 +9,46 @@ in `package.json` to match, and keep entries additive — never rewrite old ones
 
 ---
 
-## 1.1.0 — SLVR SDK 0.2.0
+## 1.1.0 — SDK 0.2.0 + grid lottery migration (IMPORTANT — mining)
 
-Moves the app onto **`@slvr-labs/sdk` 0.2.0** (from 0.1.2).
+**⚠️ If you mine, this upgrade is required.** The grid game has moved to a new
+lottery contract at a **cutover round**, and this release teaches the app to
+send every lottery call to the right contract. Without it, mining breaks in two
+ways that cost real money:
 
-**This is a dependency-only upgrade — no behavior changes.** SDK 0.2.0 is
-purely additive: nothing the auto-staker calls was renamed, changed, or
-removed, so your split, limits, mining, and buybacks all work exactly as
-before. No app code changed.
+- **Before the cutover**, the new contract is deployed but **not live** — it
+  accepts bets while minting no SLVR and holding no jackpot. Betting there
+  burns ETH for nothing.
+- **After the cutover**, rounds you bet earlier still live on the **old**
+  contract. Claiming them on the new one would forfeit those winnings.
 
-What 0.2.0 adds (all in the SDK's **auto-commit plan** area, which this app
-does not use — listed for completeness):
+Round numbering is continuous across the migration, so a round number alone
+doesn't say which contract holds it. The app now resolves that per round:
 
-- `LOCK_MODE` (`none` / `permanent`) and the `LockMode` type
-- `planLockMode(user)` — reads a plan's lock mode; returns `null` on a V2
-  contract, so it doubles as a "is this the V3 generation?" probe
-- An optional trailing `lockMode` argument on `configurePlan` and
-  `configurePlanAndDeposit`
+- **Betting** goes to whichever contract is live for the current round.
+- **Settling** goes to the contract that holds that specific round — so
+  pre-cutover rounds keep settling correctly on the old contract, forever
+  (it's never paused and has no claim deadline).
+- The one-time miner account is opened on the contract actually being bet on.
+- Round reads, EV pricing, and the dashboard all follow the same routing.
+
+Also moves onto **`@slvr-labs/sdk` 0.2.0** (from 0.1.2), which is what exposes
+the migration helpers (`lotteryForRound`, `isMigrationLive`) plus additive
+auto-commit `LOCK_MODE` support the auto-staker doesn't use. Nothing the app
+already called was renamed or removed.
 
 **User action required:** run `npm install` after merging — the SDK version
 changed, so the lockfile must be refreshed before `npm start`. Your wallet,
-settings, and history are untouched (they live outside the repo).
+settings, history, and any unsettled rounds are untouched.
 
-**Verified on 0.2.0 before release:** typecheck clean, UI check green, live
-chain/SDK connect OK, and a full dry-run cycle prices claims, mining EV, and
-buybacks correctly while sending nothing.
+**Verified before release:** typecheck clean, UI check green, live chain
+connect OK, per-round routing checked across the cutover boundary (legacy
+below it, new at/above it), and a dry-run cycle sends nothing.
 
-**Conflict-prone:** `package.json` + `package-lock.json` (dependency +
-version). If you pinned or customized the SDK version, keep your pin and take
-the rest.
+**Conflict-prone:** `src/chain.ts` (new `lotteryFor` / `lotteryAddressFor`
+helpers), `src/mining.ts` (bet + settle now route per round), `package.json`.
+If you customized mining, keep your changes but take the per-round routing —
+betting or claiming on the wrong contract loses funds.
 
 ---
 
