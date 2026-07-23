@@ -9,6 +9,49 @@ in `package.json` to match, and keep entries additive — never rewrite old ones
 
 ---
 
+## 1.1.0 — SDK 0.2.0 + grid lottery migration (IMPORTANT — mining)
+
+**⚠️ If you mine, this upgrade is required.** The grid game has moved to a new
+lottery contract at a **cutover round**, and this release teaches the app to
+send every lottery call to the right contract. Without it, mining breaks in two
+ways that cost real money:
+
+- **Before the cutover**, the new contract is deployed but **not live** — it
+  accepts bets while minting no SLVR and holding no jackpot. Betting there
+  burns ETH for nothing.
+- **After the cutover**, rounds you bet earlier still live on the **old**
+  contract. Claiming them on the new one would forfeit those winnings.
+
+Round numbering is continuous across the migration, so a round number alone
+doesn't say which contract holds it. The app now resolves that per round:
+
+- **Betting** goes to whichever contract is live for the current round.
+- **Settling** goes to the contract that holds that specific round — so
+  pre-cutover rounds keep settling correctly on the old contract, forever
+  (it's never paused and has no claim deadline).
+- The one-time miner account is opened on the contract actually being bet on.
+- Round reads, EV pricing, and the dashboard all follow the same routing.
+
+Also moves onto **`@slvr-labs/sdk` 0.2.0** (from 0.1.2), which is what exposes
+the migration helpers (`lotteryForRound`, `isMigrationLive`) plus additive
+auto-commit `LOCK_MODE` support the auto-staker doesn't use. Nothing the app
+already called was renamed or removed.
+
+**User action required:** run `npm install` after merging — the SDK version
+changed, so the lockfile must be refreshed before `npm start`. Your wallet,
+settings, history, and any unsettled rounds are untouched.
+
+**Verified before release:** typecheck clean, UI check green, live chain
+connect OK, per-round routing checked across the cutover boundary (legacy
+below it, new at/above it), and a dry-run cycle sends nothing.
+
+**Conflict-prone:** `src/chain.ts` (new `lotteryFor` / `lotteryAddressFor`
+helpers), `src/mining.ts` (bet + settle now route per round), `package.json`.
+If you customized mining, keep your changes but take the per-round routing —
+betting or claiming on the wrong contract loses funds.
+
+---
+
 ## 1.0.0 — Initial release
 
 The SLVR Auto-Staker: a local web app that automates a SLVR staking position on

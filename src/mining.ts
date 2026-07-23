@@ -35,7 +35,7 @@ import { formatEther, parseAbi, parseEther } from 'viem';
 import { GRID_SIZE, type GridMiningEv } from '@slvr-labs/sdk';
 import type { AppConfig, AppState } from './config';
 import { loadState, saveState } from './config';
-import { ADDRESSES, type Ctx } from './chain';
+import { ADDRESSES, lotteryFor, lotteryAddressFor, type Ctx } from './chain';
 import { maxLockSlvr } from './position';
 import { logEvent, seriesSince } from './db';
 import { pickMiningStrategy } from './strategies';
@@ -132,8 +132,8 @@ const ROUND_START_ABI = parseAbi(['function roundStart(uint256 roundId) view ret
 async function roundCycleSec(ctx: Ctx, roundId: bigint): Promise<number> {
   try {
     const [a, b] = await Promise.all([
-      ctx.publicClient.readContract({ address: ADDRESSES.lottery, abi: ROUND_START_ABI, functionName: 'roundStart', args: [roundId] }),
-      ctx.publicClient.readContract({ address: ADDRESSES.lottery, abi: ROUND_START_ABI, functionName: 'roundStart', args: [roundId + 1n] }),
+      ctx.publicClient.readContract({ address: lotteryAddressFor(roundId), abi: ROUND_START_ABI, functionName: 'roundStart', args: [roundId] }),
+      ctx.publicClient.readContract({ address: lotteryAddressFor(roundId + 1n), abi: ROUND_START_ABI, functionName: 'roundStart', args: [roundId + 1n] }),
     ]);
     const sec = Number(b - a);
     if (sec > 30 && sec < 24 * 3600) return sec;
@@ -212,7 +212,8 @@ export async function isMiningFavorable(ctx: Ctx, cfg: AppConfig): Promise<boole
     if (capWei < minStakeWei) return false; // cap too low to out-earn gas
     const stakeWei = minStakeWei;
     const roundId = await ctx.sdk.lottery.currentRoundId();
-    const round = await ctx.sdk.lottery.getRound(roundId);
+    // Price the round on the contract that actually holds it (see chain.ts).
+    const round = await lotteryFor(ctx, roundId).getRound(roundId);
     const raw = await ctx.sdk.estimateRoundEv({
       stake: Number(formatEther(stakeWei)),
       roundId,
@@ -275,13 +276,17 @@ async function settleMiningRounds(ctx: Ctx, cfg: AppConfig, state: AppState, log
   for (const rs of [...state.openMineRounds]) {
     const roundId = BigInt(rs);
     try {
-      const round = await ctx.sdk.lottery.getRound(roundId);
+      // Settle on the contract that HOLDS this round. A round bet before the
+      // migration cutover stays on the legacy contract forever — claiming it
+      // on the current one would forfeit the winnings. See chain.ts.
+      const lottery = lotteryFor(ctx, roundId);
+      const round = await lottery.getRound(roundId);
       if (!round.resolved) continue;
 
       if (await ctx.sdk.canClaim(roundId, me)) {
         const slvrBefore = await ctx.sdk.token.balanceOf(me);
         const ethBefore = await ctx.publicClient.getBalance({ address: me });
-        const hash = await ctx.sdk.lottery.claim({ roundId });
+        const hash = await lottery.claim({ roundId });
         await ctx.publicClient.waitForTransactionReceipt({ hash });
         const slvrGained = (await ctx.sdk.token.balanceOf(me)) - slvrBefore;
         const ethAfter = await ctx.publicClient.getBalance({ address: me });
@@ -320,10 +325,17 @@ async function maybeMine(ctx: Ctx, cfg: AppConfig, state: AppState, log: (l: str
   const roundId = await ctx.sdk.lottery.currentRoundId();
   if (state.openMineRounds.includes(roundId.toString())) return; // one bet per round
 
+  // Everything below — the round reads, the miner account, and the bet itself —
+  // must target the contract that is ACTIVE for this round. Before the
+  // migration cutover that is the legacy contract; the new one is deployed but
+  // mints no SLVR and holds no jackpot, so betting there would burn ETH for
+  // nothing. See the migration note in chain.ts.
+  const lottery = lotteryFor(ctx, roundId);
+
   const [open, bettingEnd, round, price] = await Promise.all([
-    ctx.sdk.lottery.roundOpen(roundId),
-    ctx.sdk.lottery.bettingEnd(roundId),
-    ctx.sdk.lottery.getRound(roundId),
+    lottery.roundOpen(roundId),
+    lottery.bettingEnd(roundId),
+    lottery.getRound(roundId),
     ctx.sdk.getSlvrPrice().catch(() => ({ eth: undefined as number | undefined, usd: null })),
   ]);
   const secondsLeft = Number(bettingEnd) - Math.floor(Date.now() / 1000);
@@ -349,9 +361,11 @@ async function maybeMine(ctx: Ctx, cfg: AppConfig, state: AppState, log: (l: str
   let capForStake = budget; // dry-run: only the earmarked budget limits us
   if (cfg.live) {
     // The first bet ever also opens the miner account (one-time contract
-    // fee, ~0.0001 ETH) — leave room for it beside the stake.
-    if (!(await ctx.sdk.lottery.hasAccount(ctx.account!.address))) {
-      accountFeeWei = await ctx.sdk.lottery.accountDeposit();
+    // fee, ~0.0001 ETH) — leave room for it beside the stake. The account is
+    // per-contract, so ask the one we're actually betting on (after the
+    // migration you need a fresh account on the new lottery).
+    if (!(await lottery.hasAccount(ctx.account!.address))) {
+      accountFeeWei = await lottery.accountDeposit();
     }
     const cap = await spendable(ctx);
     capForStake = cap > accountFeeWei ? cap - accountFeeWei : 0n;
@@ -462,7 +476,7 @@ async function maybeMine(ctx: Ctx, cfg: AppConfig, state: AppState, log: (l: str
   }
   log(`  ⛏ betting ${fmtEth(stakeWei)} across ${GRID_SIZE} squares in round #${roundId}…`);
   try {
-    const hash = await ctx.sdk.lottery.bet({ roundId, squares, amounts });
+    const hash = await lottery.bet({ roundId, squares, amounts });
     await ctx.publicClient.waitForTransactionReceipt({ hash });
     // Advance the pacing clock ONLY after a bet actually lands — a failed
     // attempt must not delay the next real bet by a full spacing interval —

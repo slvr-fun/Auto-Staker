@@ -15,7 +15,7 @@ import {
   type GetContractReturnType,
 } from 'viem';
 import { privateKeyToAccount } from 'viem/accounts';
-import { SlvrSDK, robinhoodChain, deployments } from '@slvr-labs/sdk';
+import { SlvrSDK, SlvrGridLottery, robinhoodChain, deployments, lotteryForRound, isMigrationLive } from '@slvr-labs/sdk';
 import { loadRpcUrl } from './config';
 import { getKey, keyStatus } from './keystore';
 
@@ -61,6 +61,46 @@ export interface Ctx {
   account?: Account;
   voteEscrow: VoteEscrowContract;
   router: RouterContract;
+}
+
+/**
+ * ═══ THE GRID LOTTERY MIGRATION ═══ (read before touching mining)
+ *
+ * The grid game moved to a new lottery contract at `deployments.robinhood
+ * .cutoverRound`. Round numbering is CONTINUOUS across the migration, so a
+ * round id alone does not tell you which contract holds it:
+ *
+ *   round <  cutoverRound  → the legacy contract (`addresses.lotteryLegacy`)
+ *   round >= cutoverRound  → the current contract (`addresses.lottery`)
+ *
+ * Both stay live — the old contract is never paused, so its rounds remain
+ * resolvable and claimable forever (no deadline). That matters for us in two
+ * ways, and getting either wrong loses real money:
+ *
+ *   1. BETTING must go to whichever contract is active for the CURRENT round.
+ *      Before the cutover the new contract is deployed but NOT live: it
+ *      accepts bets while minting no SLVR and holding no jackpot — betting
+ *      there burns ETH for nothing.
+ *   2. SETTLING must go to the contract that holds THAT round. A round we bet
+ *      before the cutover is claimed on the legacy contract even long after
+ *      the migration; claiming it on the new one would forfeit the winnings.
+ *
+ * `sdk.lottery` is bound to `addresses.lottery` (the current generation) and is
+ * therefore NOT safe to use for either purpose on its own. Always resolve the
+ * contract per round with `lotteryFor()` / `lotteryAddressFor()` below.
+ */
+export function lotteryAddressFor(roundId: bigint): Address {
+  return lotteryForRound(deployments.robinhood, roundId);
+}
+
+/** A lottery client bound to the contract that actually holds `roundId`. */
+export function lotteryFor(ctx: Ctx, roundId: bigint): SlvrGridLottery {
+  return new SlvrGridLottery(ctx.publicClient, ctx.walletClient, lotteryAddressFor(roundId));
+}
+
+/** Has the migration to the current lottery actually happened at this round? */
+export function migrationLive(currentRoundId: bigint): boolean {
+  return isMigrationLive(deployments.robinhood, currentRoundId);
 }
 
 function makeTransport() {
